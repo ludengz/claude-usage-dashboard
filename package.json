@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-dashboard",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Dashboard that visualizes Claude Code usage from local session logs",
   "main": "server/index.js",
   "bin": {
@@ -15,7 +15,13 @@
     "start": "node server/index.js",
     "test": "mocha test/**/*.test.js --timeout 5000"
   },
-  "keywords": ["claude", "usage", "dashboard", "token", "cost"],
+  "keywords": [
+    "claude",
+    "usage",
+    "dashboard",
+    "token",
+    "cost"
+  ],
   "author": "",
   "license": "ISC",
   "repository": {

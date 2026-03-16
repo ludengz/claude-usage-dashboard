@@ -13,6 +13,16 @@ app.use('/lib/d3', express.static(path.join(__dirname, '..', 'node_modules', 'd3
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/api', createApiRouter(LOG_DIR));
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Claude Usage Dashboard running at http://localhost:${PORT}`);
+  console.log('Press Ctrl+C to stop.');
+});
+
+process.on('SIGINT', () => {
+  console.log('\nShutting down...');
+  server.close(() => process.exit(0));
+});
+
+process.on('SIGTERM', () => {
+  server.close(() => process.exit(0));
 });
