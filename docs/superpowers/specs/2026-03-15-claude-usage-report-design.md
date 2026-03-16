@@ -124,6 +124,9 @@ Aggregated token data over time.
 
 All detected models with their pricing info.
 
+**Query params:**
+- `from`, `to` (optional) — date range filter (same format as `/api/usage`)
+
 **Response:**
 ```json
 {
@@ -143,6 +146,9 @@ All detected models with their pricing info.
 ### `GET /api/projects`
 
 All projects with token totals.
+
+**Query params:**
+- `from`, `to` (optional) — date range filter (same format as `/api/usage`)
 
 **Response:**
 ```json
@@ -286,7 +292,7 @@ Dark theme dashboard (background `#0f172a`) with the following sections top-to-b
    - Model distribution donut chart — percentage of tokens by model
    - Cache efficiency — horizontal progress bars for cache read / creation / uncached
 5. **Project distribution** (full-width horizontal bar chart) — Each project as a bar, sorted by total tokens
-6. **Session cost table** (full-width) — Sortable, filterable, paginated table with columns: Date, Project, Model(s), Input tokens, Output tokens, Cache Read tokens, Total tokens, API Cost, Duration. Footer row with totals. Project filter search box, sort dropdown.
+6. **Session cost table** (full-width) — Sortable, filterable, paginated table with columns: Date, Project, Model(s), Input tokens, Output tokens, Cache Read tokens, Cache Creation tokens, Total tokens, API Cost, Duration. Footer row with totals. Project filter search box, sort dropdown.
 
 ### Interactions
 
