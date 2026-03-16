@@ -1,5 +1,7 @@
 # Claude Usage Dashboard
 
+[![npm version](https://img.shields.io/npm/v/claude-usage-dashboard)](https://www.npmjs.com/package/claude-usage-dashboard)
+
 A self-hosted dashboard that visualizes your [Claude Code](https://claude.ai/code) usage by parsing local JSONL session logs from `~/.claude/projects/`.
 
 ![Dashboard Screenshot](docs/screenshots/dashboard.png)
@@ -33,7 +35,15 @@ npm install
 npm start
 ```
 
-The dashboard reads logs from `~/.claude/projects/` — if you use Claude Code, these already exist on your machine. Logs are parsed once at startup; restart the server to pick up new session data.
+### Custom Port
+
+```bash
+PORT=8080 npx claude-usage-dashboard
+```
+
+## How It Works
+
+The dashboard reads Claude Code session logs from `~/.claude/projects/` — if you use Claude Code, these already exist on your machine. Logs are parsed once at startup; restart the server to pick up new session data.
 
 ## Tech Stack
 

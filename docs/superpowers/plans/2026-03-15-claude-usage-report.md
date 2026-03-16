@@ -15,7 +15,7 @@
 ## File Structure
 
 ```
-claudeUsageReport/
+claudeUsageDashboard/
 ├── package.json
 ├── server/
 │   ├── index.js              # Express entry, static middleware, starts server
@@ -60,7 +60,7 @@ claudeUsageReport/
 - [ ] **Step 1: Initialize npm project and install dependencies**
 
 ```bash
-cd /Users/ludengzhao/Workspace/claudeUsageReport
+cd /Users/ludengzhao/Workspace/claudeUsageDashboard
 npm init -y
 npm install express d3
 npm install --save-dev mocha chai

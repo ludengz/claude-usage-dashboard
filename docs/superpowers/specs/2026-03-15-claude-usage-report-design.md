@@ -11,7 +11,7 @@ A local web application that parses Claude Code session logs and visualizes toke
 **Data Source:** Claude Code local log files at `~/.claude/projects/*/` (`.jsonl` format)
 
 ```
-claudeUsageReport/
+claudeUsageDashboard/
 ├── server/
 │   ├── index.js              # Express entry point, starts server
 │   ├── parser.js             # Parses ~/.claude/ JSONL log files
