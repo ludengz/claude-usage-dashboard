@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Usage Report</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/lib/d3/d3.min.js"></script>
+</head>
+<body>
+  <header class="top-bar">
+    <h1 class="logo">⚡ Claude Usage Report</h1>
+    <div class="controls">
+      <div id="date-picker" class="date-picker"></div>
+      <div id="plan-selector" class="plan-selector"></div>
+    </div>
+  </header>
+
+  <section class="summary-cards" id="summary-cards">
+    <div class="card" id="card-total-tokens">
+      <div class="card-label">Total Tokens</div>
+      <div class="card-value" id="val-total-tokens">—</div>
+      <div class="card-sub" id="sub-total-tokens"></div>
+    </div>
+    <div class="card" id="card-api-cost">
+      <div class="card-label">API Cost Equivalent</div>
+      <div class="card-value" id="val-api-cost">—</div>
+      <div class="card-sub" id="sub-api-cost">at standard API pricing</div>
+    </div>
+    <div class="card" id="card-savings">
+      <div class="card-label">You Saved</div>
+      <div class="card-value" id="val-savings">—</div>
+      <div class="card-sub" id="sub-savings"></div>
+    </div>
+    <div class="card" id="card-cache">
+      <div class="card-label">Cache Hit Rate</div>
+      <div class="card-value" id="val-cache-rate">—</div>
+      <div class="card-sub" id="sub-cache-rate">cache_read / total input</div>
+    </div>
+  </section>
+
+  <section class="chart-section">
+    <div class="chart-header">
+      <h2>Token Consumption Trend</h2>
+      <div class="granularity-toggle" id="granularity-toggle">
+        <button data-granularity="hourly">Hourly</button>
+        <button data-granularity="daily" class="active">Daily</button>
+        <button data-granularity="weekly">Weekly</button>
+        <button data-granularity="monthly">Monthly</button>
+      </div>
+    </div>
+    <div id="chart-token-trend" class="chart-container"></div>
+  </section>
+
+  <section class="chart-row-3">
+    <div class="chart-section">
+      <h2>Cost: Subscription vs API</h2>
+      <div id="chart-cost-comparison" class="chart-container"></div>
+    </div>
+    <div class="chart-section">
+      <h2>Model Distribution</h2>
+      <div id="chart-model-distribution" class="chart-container"></div>
+    </div>
+    <div class="chart-section">
+      <h2>Cache Efficiency</h2>
+      <div id="chart-cache-efficiency" class="chart-container"></div>
+    </div>
+  </section>
+
+  <section class="chart-section">
+    <h2>Project Distribution</h2>
+    <div id="chart-project-distribution" class="chart-container"></div>
+  </section>
+
+  <section class="chart-section">
+    <div class="chart-header">
+      <h2>Session Details</h2>
+      <div class="table-controls">
+        <input type="text" id="session-filter" placeholder="Filter by project..." class="filter-input">
+        <select id="session-sort" class="sort-select">
+          <option value="date">Sort by: Date</option>
+          <option value="cost">Sort by: Cost</option>
+          <option value="tokens">Sort by: Tokens</option>
+        </select>
+      </div>
+    </div>
+    <div id="session-table" class="table-container"></div>
+    <div id="session-pagination" class="pagination"></div>
+  </section>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
