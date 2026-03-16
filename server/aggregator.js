@@ -101,7 +101,7 @@ export function aggregateByProject(records) {
   }
   return Array.from(map.values()).map(p => {
     const path = p.projectDirName ? '/' + p.projectDirName.replace(/^-/, '').replace(/-/g, '/') : '';
-    return { name: p.name, path, total_input_tokens: p.total_input_tokens, total_output_tokens: p.total_output_tokens, total_tokens: p.total_input_tokens + p.total_output_tokens + p.total_cache_read + p.total_cache_creation, estimated_cost_usd: Math.round(p.cost * 100) / 100, session_count: p.sessions.size };
+    return { name: p.name, path, total_input_tokens: p.total_input_tokens, total_output_tokens: p.total_output_tokens, cache_read_tokens: p.total_cache_read, cache_creation_tokens: p.total_cache_creation, total_tokens: p.total_input_tokens + p.total_output_tokens + p.total_cache_read + p.total_cache_creation, estimated_cost_usd: Math.round(p.cost * 100) / 100, session_count: p.sessions.size };
   }).sort((a, b) => b.total_tokens - a.total_tokens);
 }
 

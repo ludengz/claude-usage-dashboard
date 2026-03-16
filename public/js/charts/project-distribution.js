@@ -35,16 +35,29 @@ export function renderProjectDistribution(container, data) {
     .attr('text-anchor', 'end').attr('dominant-baseline', 'middle')
     .style('fill', '#e2e8f0').style('font-size', '12px').text(d => d.name);
 
-  // Stacked bars: input (blue) + output (orange)
-  svg.selectAll('.bar-input').data(data.projects).enter().append('rect')
+  // Stacked bars: cache_read + cache_creation + input + output
+  const cr = d => d.cache_read_tokens || 0;
+  const cc = d => d.cache_creation_tokens || 0;
+
+  svg.selectAll('.bar-cache-read').data(data.projects).enter().append('rect')
     .attr('x', 0).attr('y', d => y(d.name))
-    .attr('width', d => x(d.total_input_tokens)).attr('height', y.bandwidth())
-    .attr('fill', '#3b82f6').attr('rx', 3);
+    .attr('width', d => x(cr(d))).attr('height', y.bandwidth())
+    .attr('fill', '#4ade80').attr('opacity', 0.6).attr('rx', 3);
+
+  svg.selectAll('.bar-cache-creation').data(data.projects).enter().append('rect')
+    .attr('x', d => x(cr(d))).attr('y', d => y(d.name))
+    .attr('width', d => x(cr(d) + cc(d)) - x(cr(d))).attr('height', y.bandwidth())
+    .attr('fill', '#f59e0b').attr('opacity', 0.6);
+
+  svg.selectAll('.bar-input').data(data.projects).enter().append('rect')
+    .attr('x', d => x(cr(d) + cc(d))).attr('y', d => y(d.name))
+    .attr('width', d => x(cr(d) + cc(d) + d.total_input_tokens) - x(cr(d) + cc(d))).attr('height', y.bandwidth())
+    .attr('fill', '#3b82f6').attr('opacity', 0.7);
 
   svg.selectAll('.bar-output').data(data.projects).enter().append('rect')
-    .attr('x', d => x(d.total_input_tokens)).attr('y', d => y(d.name))
-    .attr('width', d => x(d.total_tokens) - x(d.total_input_tokens)).attr('height', y.bandwidth())
-    .attr('fill', '#f97316').attr('rx', 0);
+    .attr('x', d => x(cr(d) + cc(d) + d.total_input_tokens)).attr('y', d => y(d.name))
+    .attr('width', d => x(d.total_tokens) - x(cr(d) + cc(d) + d.total_input_tokens)).attr('height', y.bandwidth())
+    .attr('fill', '#f97316').attr('opacity', 0.7);
 
   // Right-side label: tokens + cost
   svg.selectAll('.detail-label').data(data.projects).enter().append('text')
@@ -68,6 +81,8 @@ export function renderProjectDistribution(container, data) {
 
   // Legend
   const legend = el.append('div').style('display', 'flex').style('gap', '16px').style('margin-top', '8px');
+  legend.append('span').style('font-size', '11px').style('color', '#4ade80').html('● Cache Read');
+  legend.append('span').style('font-size', '11px').style('color', '#f59e0b').html('● Cache Write');
   legend.append('span').style('font-size', '11px').style('color', '#60a5fa').html('● Input');
   legend.append('span').style('font-size', '11px').style('color', '#f97316').html('● Output');
 }
