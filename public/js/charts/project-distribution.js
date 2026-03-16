@@ -15,7 +15,7 @@ export function renderProjectDistribution(container, data) {
     return;
   }
 
-  const margin = { top: 10, right: 200, bottom: 10, left: 120 };
+  const margin = { top: 10, right: 360, bottom: 10, left: 120 };
   const barHeight = 24;
   const gap = 8;
   const height = data.projects.length * (barHeight + gap) + margin.top + margin.bottom;
@@ -72,8 +72,12 @@ export function renderProjectDistribution(container, data) {
       const text = d3.select(this);
       text.append('tspan').style('fill', '#f8fafc').style('font-weight', '600').text(fmt(d.total_tokens));
       text.append('tspan').style('fill', '#64748b').text(' (');
+      text.append('tspan').style('fill', '#4ade80').text(`cr:${fmt(d.cache_read_tokens || 0)}`);
+      text.append('tspan').style('fill', '#64748b').text('/');
+      text.append('tspan').style('fill', '#f59e0b').text(`cw:${fmt(d.cache_creation_tokens || 0)}`);
+      text.append('tspan').style('fill', '#64748b').text('/');
       text.append('tspan').style('fill', '#60a5fa').text(`in:${fmt(d.total_input_tokens)}`);
-      text.append('tspan').style('fill', '#64748b').text(' / ');
+      text.append('tspan').style('fill', '#64748b').text('/');
       text.append('tspan').style('fill', '#f97316').text(`out:${fmt(d.total_output_tokens)}`);
       text.append('tspan').style('fill', '#64748b').text(')  ');
       text.append('tspan').style('fill', '#f59e0b').style('font-weight', '600').text(`$${d.estimated_cost_usd.toFixed(2)}`);

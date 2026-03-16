@@ -4,8 +4,15 @@ function formatTokens(n) {
   return n.toString();
 }
 
+const MODEL_DISPLAY = {
+  'claude-opus-4-6': 'opus 4.6',
+  'claude-sonnet-4-6': 'sonnet 4.6',
+  'claude-haiku-4-5': 'haiku 4.5',
+  'claude-haiku-4-5-20251001': 'haiku 4.5',
+};
+
 function modelTag(model) {
-  const shortName = model.replace('claude-', '').split('-').slice(0, -1).join('-') || model;
+  const shortName = MODEL_DISPLAY[model] || model.replace('claude-', '').replace(/-(\d+)-(\d+)/, ' $1.$2');
   let cls = 'tag-model-sonnet';
   if (model.includes('opus')) cls = 'tag-model-opus';
   else if (model.includes('haiku')) cls = 'tag-model-haiku';

@@ -14,5 +14,5 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/api', createApiRouter(LOG_DIR));
 
 app.listen(PORT, () => {
-  console.log(`Claude Usage Report running at http://localhost:${PORT}`);
+  console.log(`Claude Usage Dashboard running at http://localhost:${PORT}`);
 });

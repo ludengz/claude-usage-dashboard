@@ -4,6 +4,13 @@ const MODEL_COLORS = {
   'claude-haiku-4-5': '#f59e0b',
 };
 
+const MODEL_DISPLAY = {
+  'claude-opus-4-6': 'opus 4.6',
+  'claude-sonnet-4-6': 'sonnet 4.6',
+  'claude-haiku-4-5': 'haiku 4.5',
+  'claude-haiku-4-5-20251001': 'haiku 4.5',
+};
+
 export function renderModelDistribution(container, data) {
   const el = d3.select(container);
   el.selectAll('*').remove();
@@ -34,7 +41,7 @@ export function renderModelDistribution(container, data) {
   data.models.forEach(m => {
     const pct = ((m.total_tokens / total) * 100).toFixed(1);
     const color = MODEL_COLORS[m.id] || '#64748b';
-    const shortName = m.id.replace('claude-', '').replace(/-/g, ' ');
+    const shortName = MODEL_DISPLAY[m.id] || m.id.replace('claude-', '').replace(/-(\d+)-(\d+)/, ' $1.$2');
     legend.append('div').style('font-size', '11px').style('color', '#94a3b8').style('margin-bottom', '4px')
       .html(`<span style="color:${color}">●</span> ${shortName} — ${pct}%`);
   });

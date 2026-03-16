@@ -11,7 +11,7 @@ import { renderSessionTable } from './charts/session-stats.js';
 const state = {
   dateRange: { from: null, to: null },
   plan: { plan: 'max20x', customPrice: null },
-  granularity: 'hourly',
+  granularity: localStorage.getItem('selectedGranularity') || 'hourly',
   sessionSort: 'date',
   sessionOrder: 'desc',
   sessionPage: 1,
@@ -111,6 +111,7 @@ function init() {
   document.getElementById('granularity-toggle').addEventListener('click', (e) => {
     if (e.target.tagName === 'BUTTON') {
       state.granularity = e.target.dataset.granularity;
+      localStorage.setItem('selectedGranularity', state.granularity);
       loadAll();
     }
   });
