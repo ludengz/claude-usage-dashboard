@@ -51,18 +51,22 @@ export function aggregateByTime(records, granularity) {
   for (const r of records) {
     const key = bucketKey(r.timestamp, granularity);
     if (!map.has(key)) {
-      map.set(key, { time: key, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0, models: {} });
+      map.set(key, { time: key, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0, estimated_cost_usd: 0, models: {} });
     }
     const b = map.get(key);
     b.input_tokens += r.input_tokens;
     b.output_tokens += r.output_tokens;
     b.cache_read_tokens += r.cache_read_tokens;
     b.cache_creation_tokens += r.cache_creation_tokens;
+    b.estimated_cost_usd += calculateRecordCost(r);
     if (!b.models[r.model]) b.models[r.model] = { input: 0, output: 0 };
     b.models[r.model].input += r.input_tokens;
     b.models[r.model].output += r.output_tokens;
   }
-  return Array.from(map.values()).sort((a, b) => a.time.localeCompare(b.time));
+  return Array.from(map.values()).map(b => {
+    b.estimated_cost_usd = Math.round(b.estimated_cost_usd * 100) / 100;
+    return b;
+  }).sort((a, b) => a.time.localeCompare(b.time));
 }
 
 export function aggregateBySession(records) {

@@ -1,27 +1,5 @@
 // d3 is loaded as a global via <script> tag in index.html
 
-const MODEL_PRICING = {
-  'claude-opus-4-6': { input: 15, output: 75, cache_read: 1.5, cache_creation: 18.75 },
-  'claude-sonnet-4-6': { input: 3, output: 15, cache_read: 0.30, cache_creation: 3.75 },
-  'claude-haiku-4-5': { input: 0.80, output: 4, cache_read: 0.08, cache_creation: 1.0 },
-};
-
-function bucketCost(b) {
-  // Approximate: use per-model breakdown for input/output, flat rate for cache
-  let cost = 0;
-  const M = 1_000_000;
-  for (const [model, tokens] of Object.entries(b.models || {})) {
-    const p = MODEL_PRICING[model];
-    if (!p) continue;
-    cost += (tokens.input / M) * p.input + (tokens.output / M) * p.output;
-  }
-  // Cache tokens aren't split by model, use sonnet rate as approximation
-  const sp = MODEL_PRICING['claude-sonnet-4-6'];
-  cost += ((b.cache_read_tokens || 0) / M) * sp.cache_read;
-  cost += ((b.cache_creation_tokens || 0) / M) * sp.cache_creation;
-  return cost;
-}
-
 export function renderTokenTrend(container, data) {
   const el = d3.select(container);
   el.selectAll('*').remove();
@@ -118,7 +96,7 @@ export function renderTokenTrend(container, data) {
   svg.selectAll('rect')
     .on('mouseover', (event, d) => {
       const total = d.input_tokens + d.output_tokens + (d.cache_read_tokens || 0) + (d.cache_creation_tokens || 0);
-      const cost = bucketCost(d);
+      const cost = d.estimated_cost_usd || 0;
       tooltip.style('display', 'block')
         .html(`<strong>${d.time}</strong><br>Total: ${d3.format(',')(total)} tokens &nbsp;<span style="color:#f59e0b;font-weight:600">$${cost.toFixed(2)}</span><br><span style="color:#4ade80">Cache Read: ${d3.format(',')(d.cache_read_tokens || 0)}</span><br><span style="color:#f59e0b">Cache Write: ${d3.format(',')(d.cache_creation_tokens || 0)}</span><br><span style="color:#60a5fa">Input: ${d3.format(',')(d.input_tokens)}</span><br><span style="color:#f97316">Output: ${d3.format(',')(d.output_tokens)}</span>`);
     })
