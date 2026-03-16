@@ -11,7 +11,7 @@ import { renderSessionTable } from './charts/session-stats.js';
 const state = {
   dateRange: { from: null, to: null },
   plan: { plan: 'max20x', customPrice: null },
-  granularity: null,
+  granularity: 'hourly',
   sessionSort: 'date',
   sessionOrder: 'desc',
   sessionPage: 1,
@@ -47,7 +47,14 @@ async function loadAll() {
   ]);
 
   // Summary cards
-  document.getElementById('val-total-tokens').textContent = formatNumber(usage.total.input_tokens + usage.total.output_tokens);
+  const t = usage.total;
+  const totalAll = t.input_tokens + t.output_tokens + t.cache_read_tokens + t.cache_creation_tokens;
+  document.getElementById('val-total-tokens').textContent = formatNumber(totalAll);
+  document.getElementById('sub-total-tokens').innerHTML =
+    `<span style="color:#4ade80">cache read:${formatNumber(t.cache_read_tokens)}</span> · ` +
+    `<span style="color:#f59e0b">cache write:${formatNumber(t.cache_creation_tokens)}</span> · ` +
+    `<span style="color:#60a5fa">in:${formatNumber(t.input_tokens)}</span> · ` +
+    `<span style="color:#f97316">out:${formatNumber(t.output_tokens)}</span>`;
   document.getElementById('val-api-cost').textContent = `$${cost.api_equivalent_cost_usd.toFixed(2)}`;
 
   const savings = cost.savings_usd;
