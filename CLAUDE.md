@@ -9,12 +9,19 @@ A dashboard that visualizes Claude Code usage by parsing JSONL session logs from
 ## Commands
 
 - **Start server:** `npm start` (runs on http://localhost:3000)
+- **Custom port:** `PORT=8080 npm start`
+- **Run as npx package:** `npx claude-usage-dashboard`
 - **Run all tests:** `npm test`
 - **Run single test:** `npx mocha test/parser.test.js --timeout 5000`
+- **Test framework:** Mocha + Chai (expect style). API tests spin up a real Express server with a temp JSONL fixture directory. Test files: `parser`, `pricing`, `aggregator`, `api`.
 
 ## Architecture
 
 **ES modules throughout** (`"type": "module"` in package.json). No build step — the frontend uses native ES module imports via `<script type="module">`.
+
+### CLI (`bin/cli.js`)
+
+npm package entry point. Spawns the server as a child process with `stdio: 'inherit'` and forwards signals.
 
 ### Server (Express 5, `server/`)
 
@@ -33,7 +40,9 @@ A dashboard that visualizes Claude Code usage by parsing JSONL session logs from
 
 ### Key Design Decisions
 
+- D3 v7 is served from `node_modules/d3/dist/` via an Express static mount at `/lib/d3/`. Frontend imports use `/lib/d3/d3.min.js`.
 - Logs are parsed once at server startup (no hot-reload). Restart server to pick up new data.
 - All cost calculations happen server-side in `pricing.js`. The frontend displays pre-computed values.
 - Date filtering and time bucketing use local timezone (not UTC).
 - The `/api/sessions` endpoint supports server-side pagination (`page`, `limit` params).
+- All API endpoints accept `from`, `to`, `project`, and `model` query params for filtering.
