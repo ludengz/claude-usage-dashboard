@@ -10,11 +10,13 @@ A self-hosted dashboard that visualizes your [Claude Code](https://claude.ai/cod
 
 - **Token tracking** — Total tokens with breakdown by input, output, cache read, and cache write
 - **Cost estimation** — API cost equivalent at standard pricing, compared against your subscription plan (Pro / Max 5x / Max 20x)
+- **Subscription quota** — Real-time utilization gauges (5-hour, 7-day, per-model) pulled from the Anthropic API with auto-detection of your plan tier
 - **Token consumption trend** — Stacked bar chart with hourly, daily, weekly, or monthly granularity
 - **Model distribution** — Donut chart showing usage across Claude models
 - **Cache efficiency** — Visual breakdown of cache read, cache creation, and uncached requests
 - **Project distribution** — Horizontal bar chart comparing token usage across projects
 - **Session details** — Sortable, paginated table of every session with cost and duration
+- **Auto-refresh** — Dashboard polls every 30s for new usage data; quota refreshes every 2 minutes
 
 ## Quick Start
 
@@ -43,7 +45,9 @@ PORT=8080 npx claude-usage-dashboard
 
 ## How It Works
 
-The dashboard reads Claude Code session logs from `~/.claude/projects/` — if you use Claude Code, these already exist on your machine. Logs are parsed once at startup; restart the server to pick up new session data.
+The dashboard reads Claude Code session logs from `~/.claude/projects/` — if you use Claude Code, these already exist on your machine. Logs are automatically re-read every 5 seconds, and new usage appears without restarting the server.
+
+Subscription quota data is fetched from the Anthropic API using your local OAuth credentials (`~/.claude/.credentials.json`). Your plan tier (Pro / Max 5x / Max 20x) is auto-detected from the same file.
 
 ## Tech Stack
 
