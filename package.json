@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-dashboard",
-  "version": "1.0.6",
+  "version": "1.1.0",
   "description": "Dashboard that visualizes Claude Code usage from local session logs",
   "main": "server/index.js",
   "bin": {
