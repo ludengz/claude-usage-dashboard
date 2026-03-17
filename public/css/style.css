@@ -194,6 +194,36 @@ body {
 }
 .date-picker span { color: var(--text-secondary); font-size: 12px; }
 
+.refresh-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-refresh {
+  padding: 4px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+.btn-refresh:hover { background: var(--blue); }
+.auto-refresh-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.last-updated {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .plan-selector select, .plan-selector input {
   padding: 6px 10px;
   background: var(--bg-input);

@@ -6,11 +6,11 @@ import path from 'path';
 import os from 'os';
 import { createApiRouter } from '../server/routes/api.js';
 
-let app, server, baseUrl, tmpDir;
+let app, server, baseUrl, tmpDir, projectDir;
 
 before((done) => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'api-test-'));
-  const projectDir = path.join(tmpDir, '-Users-test-Workspace-testproject');
+  projectDir = path.join(tmpDir, '-Users-test-Workspace-testproject');
   fs.mkdirSync(projectDir);
   const logFile = path.join(projectDir, 'sess.jsonl');
   const lines = [
@@ -19,7 +19,7 @@ before((done) => {
   ];
   fs.writeFileSync(logFile, lines.join('\n'));
   app = express();
-  app.use('/api', createApiRouter(tmpDir));
+  app.use('/api', createApiRouter(tmpDir, { cacheTtlMs: 500 }));
   server = app.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; done(); });
 });
 
@@ -88,5 +88,39 @@ describe('GET /api/cache', () => {
     expect(data.total_input_tokens).to.equal(4000);
     expect(data.cache_read_tokens).to.equal(600);
     expect(data.cache_read_rate).to.be.a('number');
+  });
+});
+
+describe('GET /api/status', () => {
+  it('returns server status with cache info', async () => {
+    const { data } = await fetchJson('/api/status');
+    expect(data.record_count).to.equal(2);
+    expect(data.last_refreshed).to.be.a('string');
+    expect(data.cache_ttl_ms).to.equal(500);
+  });
+});
+
+describe('Cache refresh', () => {
+  it('picks up new log data after TTL expires', async function () {
+    this.timeout(10000);
+    // Verify initial state
+    const before = await fetchJson('/api/usage?from=2026-03-11&to=2026-03-11');
+    expect(before.data.total.input_tokens).to.equal(0);
+
+    // Write new data to the fixture directory
+    const newLogFile = path.join(projectDir, 'sess2.jsonl');
+    const newLine = JSON.stringify({
+      type: 'assistant', sessionId: 's2', timestamp: '2026-03-11T12:00:00.000Z',
+      message: { model: 'claude-sonnet-4-6', usage: { input_tokens: 5000, output_tokens: 1000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } }
+    });
+    fs.writeFileSync(newLogFile, newLine);
+
+    // Wait for TTL to expire (500ms + buffer)
+    await new Promise(resolve => setTimeout(resolve, 700));
+
+    // New data should now appear
+    const after = await fetchJson('/api/usage?from=2026-03-11&to=2026-03-11');
+    expect(after.data.total.input_tokens).to.equal(5000);
+    expect(after.data.total.output_tokens).to.equal(1000);
   });
 });

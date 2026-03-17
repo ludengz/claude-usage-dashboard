@@ -1,4 +1,4 @@
-import { fetchUsage, fetchModels, fetchProjects, fetchSessions, fetchCost, fetchCache } from './api.js';
+import { fetchUsage, fetchModels, fetchProjects, fetchSessions, fetchCost, fetchCache, fetchStatus } from './api.js';
 import { initDatePicker } from './components/date-picker.js';
 import { initPlanSelector } from './components/plan-selector.js';
 import { renderTokenTrend } from './charts/token-trend.js';
@@ -16,6 +16,9 @@ const state = {
   sessionOrder: 'desc',
   sessionPage: 1,
   sessionProject: '',
+  autoRefresh: true,
+  autoRefreshInterval: 30,
+  _refreshTimer: null,
 };
 
 let datePicker, planSelector;
@@ -24,6 +27,28 @@ function formatNumber(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
   return n.toString();
+}
+
+function updateLastUpdated() {
+  const el = document.getElementById('last-updated');
+  if (el) {
+    const now = new Date();
+    el.textContent = `Updated ${now.toLocaleTimeString()}`;
+  }
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  if (state.autoRefresh) {
+    state._refreshTimer = setInterval(() => loadAll(), state.autoRefreshInterval * 1000);
+  }
+}
+
+function stopAutoRefresh() {
+  if (state._refreshTimer) {
+    clearInterval(state._refreshTimer);
+    state._refreshTimer = null;
+  }
 }
 
 async function loadAll() {
@@ -93,6 +118,8 @@ async function loadAll() {
       loadAll();
     },
   });
+
+  updateLastUpdated();
 }
 
 function init() {
@@ -134,7 +161,20 @@ function init() {
     loadAll();
   });
 
+  document.getElementById('btn-refresh').addEventListener('click', () => loadAll());
+
+  const autoToggle = document.getElementById('auto-refresh-toggle');
+  autoToggle.addEventListener('change', () => {
+    state.autoRefresh = autoToggle.checked;
+    if (state.autoRefresh) {
+      startAutoRefresh();
+    } else {
+      stopAutoRefresh();
+    }
+  });
+
   loadAll();
+  startAutoRefresh();
 }
 
 document.addEventListener('DOMContentLoaded', init);

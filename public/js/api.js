@@ -11,3 +11,4 @@ export async function fetchProjects(params = {}) { return (await fetch(`${BASE}/
 export async function fetchSessions(params = {}) { return (await fetch(`${BASE}/sessions${qs(params)}`)).json(); }
 export async function fetchCost(params = {}) { return (await fetch(`${BASE}/cost${qs(params)}`)).json(); }
 export async function fetchCache(params = {}) { return (await fetch(`${BASE}/cache${qs(params)}`)).json(); }
+export async function fetchStatus() { return (await fetch(`${BASE}/status`)).json(); }

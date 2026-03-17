@@ -3,18 +3,32 @@ import { parseLogDirectory } from '../parser.js';
 import { filterByDateRange, autoGranularity, aggregateByTime, aggregateBySession, aggregateByProject, aggregateByModel, aggregateCache } from '../aggregator.js';
 import { calculateRecordCost, PLAN_DEFAULTS } from '../pricing.js';
 
-export function createApiRouter(logBaseDir) {
+export function createApiRouter(logBaseDir, options = {}) {
   const router = Router();
-  let allRecords = [];
-  try {
-    allRecords = parseLogDirectory(logBaseDir);
-    console.log(`Parsed ${allRecords.length} records from ${logBaseDir}`);
-  } catch (err) {
-    console.error('Failed to parse log directory:', err.message);
+  const CACHE_TTL_MS = options.cacheTtlMs || 5000;
+  let cachedRecords = [];
+  let lastRefreshed = null;
+
+  function refreshRecords() {
+    const now = Date.now();
+    if (lastRefreshed && (now - lastRefreshed) < CACHE_TTL_MS) return cachedRecords;
+    try {
+      cachedRecords = parseLogDirectory(logBaseDir);
+      lastRefreshed = now;
+      console.log(`Parsed ${cachedRecords.length} records from ${logBaseDir}`);
+    } catch (err) {
+      console.error('Failed to parse log directory:', err.message);
+      // Keep stale data on failure
+      if (!lastRefreshed) lastRefreshed = now;
+    }
+    return cachedRecords;
   }
 
+  // Initial parse
+  refreshRecords();
+
   function applyFilters(query) {
-    let records = filterByDateRange(allRecords, query.from, query.to);
+    let records = filterByDateRange(refreshRecords(), query.from, query.to);
     if (query.project) records = records.filter(r => r.project === query.project);
     if (query.model) records = records.filter(r => r.model === query.model);
     return records;
@@ -83,5 +97,14 @@ export function createApiRouter(logBaseDir) {
   });
 
   router.get('/cache', (req, res) => { res.json(aggregateCache(applyFilters(req.query))); });
+
+  router.get('/status', (req, res) => {
+    res.json({
+      record_count: cachedRecords.length,
+      last_refreshed: lastRefreshed ? new Date(lastRefreshed).toISOString() : null,
+      cache_ttl_ms: CACHE_TTL_MS,
+    });
+  });
+
   return router;
 }
