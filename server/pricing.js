@@ -1,9 +1,9 @@
 export const MODEL_PRICING = {
   'claude-opus-4-6': {
-    input_price_per_mtok: 15,
-    output_price_per_mtok: 75,
-    cache_read_price_per_mtok: 1.5,
-    cache_creation_price_per_mtok: 18.75,
+    input_price_per_mtok: 5,
+    output_price_per_mtok: 25,
+    cache_read_price_per_mtok: 0.50,
+    cache_creation_price_per_mtok: 6.25,
   },
   'claude-sonnet-4-6': {
     input_price_per_mtok: 3,
@@ -12,10 +12,10 @@ export const MODEL_PRICING = {
     cache_creation_price_per_mtok: 3.75,
   },
   'claude-haiku-4-5': {
-    input_price_per_mtok: 0.80,
-    output_price_per_mtok: 4,
-    cache_read_price_per_mtok: 0.08,
-    cache_creation_price_per_mtok: 1.0,
+    input_price_per_mtok: 1,
+    output_price_per_mtok: 5,
+    cache_read_price_per_mtok: 0.10,
+    cache_creation_price_per_mtok: 1.25,
   },
 };
 

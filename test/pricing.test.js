@@ -60,8 +60,8 @@ describe('calculateRecordCost', () => {
 describe('getModelPricing', () => {
   it('returns pricing for known model', () => {
     const pricing = getModelPricing('claude-opus-4-6');
-    expect(pricing.input_price_per_mtok).to.equal(15);
-    expect(pricing.output_price_per_mtok).to.equal(75);
+    expect(pricing.input_price_per_mtok).to.equal(5);
+    expect(pricing.output_price_per_mtok).to.equal(25);
   });
 
   it('returns null for unknown model', () => {
