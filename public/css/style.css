@@ -32,7 +32,8 @@ body {
   border-bottom: 1px solid var(--bg-card);
   margin-bottom: 20px;
 }
-.logo { font-size: 18px; font-weight: 700; }
+.logo { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.claude-icon { width: 22px; height: 22px; flex-shrink: 0; }
 .controls { display: flex; gap: 12px; align-items: center; }
 
 .summary-cards {
