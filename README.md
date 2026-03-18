@@ -32,8 +32,8 @@ Open http://localhost:3000 in your browser.
 ### From Source
 
 ```bash
-git clone https://github.com/ludengz/claudeUsageDashboard.git
-cd claudeUsageDashboard
+git clone https://github.com/ludengz/claude-usage-dashboard.git
+cd claude-usage-dashboard
 npm install
 npm start
 ```
