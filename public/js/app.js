@@ -49,8 +49,16 @@ function getTimezoneAbbr() {
 
 async function loadQuota() {
   try {
-    const data = await fetchQuota();
-    renderQuotaGauges(document.getElementById('chart-quota'), data);
+    const today = new Date();
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(today.getDate() - 7);
+    const fmt = d => d.toISOString().slice(0, 10);
+
+    const [data, cost7d] = await Promise.all([
+      fetchQuota(),
+      fetchCost({ from: fmt(sevenDaysAgo), to: fmt(today), plan: state.plan.plan }),
+    ]);
+    renderQuotaGauges(document.getElementById('chart-quota'), data, { cost7d: cost7d.api_equivalent_cost_usd });
     const el = document.getElementById('quota-last-updated');
     if (el && data.lastFetched) el.textContent = `Updated ${new Date(data.lastFetched).toLocaleTimeString()} ${getTimezoneAbbr()}`;
   } catch { /* silently degrade */ }
@@ -105,12 +113,6 @@ async function loadAll() {
     `<span style="color:#60a5fa">in:${formatNumber(t.input_tokens)}</span> · ` +
     `<span style="color:#f97316">out:${formatNumber(t.output_tokens)}</span>`;
   document.getElementById('val-api-cost').textContent = `$${cost.api_equivalent_cost_usd.toFixed(2)}`;
-
-  const savings = cost.savings_usd;
-  const savingsEl = document.getElementById('val-savings');
-  savingsEl.textContent = `$${Math.abs(savings).toFixed(2)}`;
-  savingsEl.style.color = savings >= 0 ? '#4ade80' : '#ef4444';
-  document.getElementById('sub-savings').textContent = savings >= 0 ? 'subscription saved you this much!' : 'API would have been cheaper';
 
   document.getElementById('val-cache-rate').textContent = `${(cache.cache_read_rate * 100).toFixed(1)}%`;
 

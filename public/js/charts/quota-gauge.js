@@ -1,4 +1,4 @@
-export function renderQuotaGauges(container, data) {
+export function renderQuotaGauges(container, data, opts = {}) {
   container.innerHTML = '';
 
   if (!data || data.available === false) {
@@ -85,4 +85,20 @@ export function renderQuotaGauges(container, data) {
   }
 
   container.appendChild(wrapper);
+
+  // Project cost at full 7-day quota utilization
+  const sevenDay = data.seven_day;
+  if (sevenDay && sevenDay.utilization > 0 && opts.cost7d > 0) {
+    const pct = sevenDay.utilization / 100;
+    const projectedCost = opts.cost7d / pct;
+
+    const proj = document.createElement('div');
+    proj.style.cssText = 'margin-top:12px;padding:8px 12px;background:#1e293b;border-radius:6px;font-size:12px;color:#94a3b8';
+    const monthlyProjected = projectedCost * (30 / 7);
+    proj.innerHTML =
+      `7-day usage: <strong style="color:#e2e8f0">$${opts.cost7d.toFixed(2)}</strong> API cost at <strong style="color:#e2e8f0">${sevenDay.utilization.toFixed(1)}%</strong> quota` +
+      ` · Projected at 100%: <strong style="color:#fbbf24">$${projectedCost.toFixed(2)}</strong>/week` +
+      ` · <strong style="color:#fbbf24">$${monthlyProjected.toFixed(2)}</strong>/month`;
+    container.appendChild(proj);
+  }
 }
