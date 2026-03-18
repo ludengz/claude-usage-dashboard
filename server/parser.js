@@ -2,21 +2,38 @@ import fs from 'fs';
 import path from 'path';
 
 export function deriveProjectName(dirName) {
-  const clean = dirName.startsWith('-') ? dirName.slice(1) : dirName;
+  // Strip drive prefix like "C--" at the start
+  const clean = dirName.replace(/^[A-Za-z]--/, '');
 
-  const workspaceIdx = clean.indexOf('-Workspace-');
-  if (workspaceIdx !== -1) {
-    return clean.slice(workspaceIdx + '-Workspace-'.length);
+  // Known parent directory markers (case-insensitive search)
+  // Match the last occurrence of common parent dirs to get the project folder name
+  const lower = clean.toLowerCase();
+  const markers = ['-workspace-', '-projects-', '-repos-', '-src-', '-home-', '-desktop-', '-documents-', '-downloads-'];
+  let bestIdx = -1;
+  let bestLen = 0;
+  for (const m of markers) {
+    const idx = lower.lastIndexOf(m);
+    if (idx > bestIdx) {
+      bestIdx = idx;
+      bestLen = m.length;
+    }
+  }
+  if (bestIdx !== -1) {
+    const result = clean.slice(bestIdx + bestLen);
+    // Handle worktree subdirs: "project--claude-worktrees-branch-name" → "project"
+    const wtIdx = result.indexOf('--claude-worktrees');
+    return wtIdx !== -1 ? result.slice(0, wtIdx) : result;
   }
 
-  const homeIdx = clean.indexOf('-Home-');
-  if (homeIdx !== -1) {
-    const rest = clean.slice(homeIdx + '-Home-'.length);
-    return rest;
+  // Fallback: strip Users-username prefix, return the rest
+  const userMatch = clean.match(/^Users-[^-]+-(.+)$/);
+  if (userMatch) {
+    const rest = userMatch[1];
+    const wtIdx = rest.indexOf('--claude-worktrees');
+    return wtIdx !== -1 ? rest.slice(0, wtIdx) : rest;
   }
 
-  const parts = clean.split('-');
-  return parts[parts.length - 1];
+  return clean;
 }
 
 export function parseLogFile(filePath) {

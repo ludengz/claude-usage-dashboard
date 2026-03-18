@@ -67,7 +67,17 @@ export function renderQuotaGauges(container, data) {
     if (item.extraDetail) {
       sub.textContent = item.extraDetail;
     } else if (item.resets_at) {
-      sub.textContent = `Resets ${new Date(item.resets_at).toLocaleTimeString()}`;
+      const resetDate = new Date(item.resets_at);
+      const now = new Date();
+      const isToday = resetDate.getFullYear() === now.getFullYear()
+        && resetDate.getMonth() === now.getMonth()
+        && resetDate.getDate() === now.getDate();
+      const tzParts = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(resetDate);
+      const tz = tzParts.find(p => p.type === 'timeZoneName')?.value || '';
+      const resetStr = isToday
+        ? resetDate.toLocaleTimeString()
+        : resetDate.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+      sub.textContent = `Resets ${resetStr} ${tz}`;
     }
     cell.appendChild(sub);
 

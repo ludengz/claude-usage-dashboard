@@ -15,7 +15,7 @@ describe('deriveProjectName', () => {
   });
 
   it('handles worktree directory names', () => {
-    expect(deriveProjectName('-Users-foo-Workspace-proj--claude-worktrees-branch')).to.equal('proj--claude-worktrees-branch');
+    expect(deriveProjectName('-Users-foo-Workspace-proj--claude-worktrees-branch')).to.equal('proj');
   });
 });
 

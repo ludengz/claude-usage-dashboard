@@ -57,9 +57,13 @@
   <section class="chart-section">
     <div class="chart-header">
       <h2>Token Consumption Trend</h2>
+      <div class="granularity-toggle" id="yaxis-toggle">
+        <button data-yaxis="tokens">Tokens</button>
+        <button data-yaxis="dollars">$</button>
+      </div>
       <div class="granularity-toggle" id="granularity-toggle">
         <button data-granularity="hourly">Hourly</button>
-        <button data-granularity="daily" class="active">Daily</button>
+        <button data-granularity="daily">Daily</button>
         <button data-granularity="weekly">Weekly</button>
         <button data-granularity="monthly">Monthly</button>
       </div>

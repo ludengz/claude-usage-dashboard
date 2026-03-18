@@ -13,11 +13,12 @@ const state = {
   dateRange: { from: null, to: null },
   plan: { plan: 'max20x', customPrice: null },
   granularity: localStorage.getItem('selectedGranularity') || 'hourly',
+  trendYAxis: localStorage.getItem('trendYAxis') || 'tokens',
   sessionSort: 'date',
   sessionOrder: 'desc',
   sessionPage: 1,
   sessionProject: '',
-  autoRefresh: true,
+  autoRefresh: localStorage.getItem('autoRefresh') !== 'false',
   autoRefreshInterval: 30,
   _refreshTimer: null,
   quotaRefreshInterval: 120,
@@ -36,8 +37,14 @@ function updateLastUpdated() {
   const el = document.getElementById('last-updated');
   if (el) {
     const now = new Date();
-    el.textContent = `Updated ${now.toLocaleTimeString()}`;
+    el.textContent = `Updated ${now.toLocaleTimeString()} ${getTimezoneAbbr()}`;
   }
+}
+
+function getTimezoneAbbr() {
+  const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(new Date());
+  const tz = parts.find(p => p.type === 'timeZoneName');
+  return tz ? tz.value : '';
 }
 
 async function loadQuota() {
@@ -45,7 +52,7 @@ async function loadQuota() {
     const data = await fetchQuota();
     renderQuotaGauges(document.getElementById('chart-quota'), data);
     const el = document.getElementById('quota-last-updated');
-    if (el && data.lastFetched) el.textContent = `Updated ${new Date(data.lastFetched).toLocaleTimeString()}`;
+    if (el && data.lastFetched) el.textContent = `Updated ${new Date(data.lastFetched).toLocaleTimeString()} ${getTimezoneAbbr()}`;
   } catch { /* silently degrade */ }
 }
 
@@ -109,12 +116,12 @@ async function loadAll() {
 
   // Set active granularity button
   const activeGran = usage.granularity;
-  document.querySelectorAll('.granularity-toggle button').forEach(btn => {
+  document.querySelectorAll('#granularity-toggle button').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.granularity === activeGran);
   });
 
   // Charts
-  renderTokenTrend(document.getElementById('chart-token-trend'), usage);
+  renderTokenTrend(document.getElementById('chart-token-trend'), usage, { yAxis: state.trendYAxis });
   renderCostComparison(document.getElementById('chart-cost-comparison'), cost);
   renderModelDistribution(document.getElementById('chart-model-distribution'), models);
   renderCacheEfficiency(document.getElementById('chart-cache-efficiency'), cache);
@@ -139,13 +146,47 @@ async function loadAll() {
   updateLastUpdated();
 }
 
+// Max bucket limits per granularity to avoid crashing the browser
+const GRANULARITY_MAX_DAYS = { hourly: 14, daily: 90, weekly: 365, monthly: 1825 };
+
+function updateGranularityButtons() {
+  const { from, to } = state.dateRange;
+  const days = (from && to) ? (new Date(to) - new Date(from)) / (1000 * 60 * 60 * 24) : 30;
+  document.querySelectorAll('#granularity-toggle button').forEach(btn => {
+    const gran = btn.dataset.granularity;
+    const maxDays = GRANULARITY_MAX_DAYS[gran] || 9999;
+    const tooLarge = days > maxDays;
+    btn.disabled = tooLarge;
+    btn.title = tooLarge ? `Range too large for ${gran} view (max ${maxDays} days)` : '';
+  });
+  // If currently selected granularity is now disabled, switch to the finest available
+  const currentBtn = document.querySelector(`#granularity-toggle button[data-granularity="${state.granularity}"]`);
+  if (currentBtn && currentBtn.disabled) {
+    const order = ['hourly', 'daily', 'weekly', 'monthly'];
+    const available = order.find(g => {
+      const b = document.querySelector(`#granularity-toggle button[data-granularity="${g}"]`);
+      return b && !b.disabled;
+    });
+    if (available) {
+      state.granularity = available;
+      localStorage.setItem('selectedGranularity', state.granularity);
+    }
+  }
+  // Update active class
+  document.querySelectorAll('#granularity-toggle button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.granularity === state.granularity);
+  });
+}
+
 function init() {
   datePicker = initDatePicker(document.getElementById('date-picker'), (range) => {
     state.dateRange = range;
     state.sessionPage = 1;
+    updateGranularityButtons();
     loadAll();
   });
   state.dateRange = datePicker.getRange();
+  updateGranularityButtons();
 
   planSelector = initPlanSelector(document.getElementById('plan-selector'), (plan) => {
     state.plan = plan;
@@ -153,9 +194,25 @@ function init() {
   });
 
   document.getElementById('granularity-toggle').addEventListener('click', (e) => {
-    if (e.target.tagName === 'BUTTON') {
+    if (e.target.tagName === 'BUTTON' && !e.target.disabled) {
       state.granularity = e.target.dataset.granularity;
       localStorage.setItem('selectedGranularity', state.granularity);
+      loadAll();
+    }
+  });
+
+  // Y-axis toggle (tokens / dollars)
+  const yaxisToggle = document.getElementById('yaxis-toggle');
+  yaxisToggle.querySelectorAll('button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.yaxis === state.trendYAxis);
+  });
+  yaxisToggle.addEventListener('click', (e) => {
+    if (e.target.tagName === 'BUTTON') {
+      state.trendYAxis = e.target.dataset.yaxis;
+      localStorage.setItem('trendYAxis', state.trendYAxis);
+      yaxisToggle.querySelectorAll('button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.yaxis === state.trendYAxis);
+      });
       loadAll();
     }
   });
@@ -181,8 +238,10 @@ function init() {
   document.getElementById('btn-refresh').addEventListener('click', () => { loadAll(); loadQuota(); });
 
   const autoToggle = document.getElementById('auto-refresh-toggle');
+  autoToggle.checked = state.autoRefresh;
   autoToggle.addEventListener('change', () => {
     state.autoRefresh = autoToggle.checked;
+    localStorage.setItem('autoRefresh', state.autoRefresh);
     if (state.autoRefresh) {
       startAutoRefresh();
     } else {
