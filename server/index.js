@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import express from 'express';
 import path from 'path';
 import os from 'os';

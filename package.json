@@ -4,7 +4,7 @@
   "description": "Dashboard that visualizes Claude Code usage from local session logs",
   "main": "server/index.js",
   "bin": {
-    "claude-usage-dashboard": "server/index.js"
+    "claude-usage-dashboard": "bin/cli.sh"
   },
   "files": [
     "bin/",
