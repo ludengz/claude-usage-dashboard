@@ -14,7 +14,10 @@ const child = spawn(process.execPath, [server], {
 
 child.on('exit', (code) => process.exit(code ?? 0));
 
-// Forward signals to child
+// Forward signals to child, then exit parent
 for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => child.kill(sig));
+  process.on(sig, () => {
+    child.kill(sig);
+    process.exit();
+  });
 }
