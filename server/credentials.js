@@ -20,6 +20,50 @@ function readFromKeychain() {
   }
 }
 
+function readFromWindowsCredentialManager() {
+  if (process.platform !== 'win32') return null;
+  try {
+    // Use PowerShell with Win32 CredRead API to read from Windows Credential Manager.
+    // Encode as UTF-16LE base64 for -EncodedCommand to avoid all shell escaping issues.
+    const psScript = [
+      'Add-Type -TypeDefinition @"',
+      'using System; using System.Runtime.InteropServices;',
+      'public class CredManager {',
+      '  [DllImport("advapi32.dll", SetLastError=true, CharSet=CharSet.Unicode)]',
+      '  public static extern bool CredRead(string target, int type, int flags, out IntPtr credential);',
+      '  [DllImport("advapi32.dll")] public static extern void CredFree(IntPtr cred);',
+      '  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]',
+      '  public struct CREDENTIAL {',
+      '    public int Flags; public int Type; public string TargetName; public string Comment;',
+      '    public long LastWritten; public int CredentialBlobSize; public IntPtr CredentialBlob;',
+      '    public int Persist; public int AttributeCount; public IntPtr Attributes;',
+      '    public string TargetAlias; public string UserName;',
+      '  }',
+      '}',
+      '"@',
+      '$ptr = [IntPtr]::Zero',
+      `if ([CredManager]::CredRead('${KEYCHAIN_SERVICE}', 1, 0, [ref]$ptr)) {`,
+      '  $c = [System.Runtime.InteropServices.Marshal]::PtrToStructure($ptr, [Type][CredManager+CREDENTIAL])',
+      '  $b = New-Object byte[] $c.CredentialBlobSize',
+      '  [System.Runtime.InteropServices.Marshal]::Copy($c.CredentialBlob, $b, 0, $c.CredentialBlobSize)',
+      '  [CredManager]::CredFree($ptr) | Out-Null',
+      '  [System.Text.Encoding]::UTF8.GetString($b)',
+      '}',
+    ].join('\n');
+    const buf = Buffer.alloc(psScript.length * 2);
+    for (let i = 0; i < psScript.length; i++) buf.writeUInt16LE(psScript.charCodeAt(i), i * 2);
+    const raw = execSync(
+      `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${buf.toString('base64')}`,
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 }
+    ).trim();
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return data.claudeAiOauth || null;
+  } catch {
+    return null;
+  }
+}
+
 function readFromFile(credentialsPath) {
   try {
     const raw = fs.readFileSync(credentialsPath, 'utf-8');
@@ -30,13 +74,19 @@ function readFromFile(credentialsPath) {
   }
 }
 
+function readFromSecureStore() {
+  if (process.platform === 'darwin') return readFromKeychain();
+  if (process.platform === 'win32') return readFromWindowsCredentialManager();
+  return null;
+}
+
 export function readCredentials(credentialsPath) {
   if (credentialsPath) {
-    // Explicit path provided (e.g. tests) — skip Keychain
+    // Explicit path provided (e.g. tests) — skip secure store
     return readFromFile(credentialsPath);
   }
-  // Try macOS Keychain first, then fall back to default file
-  return readFromKeychain() || readFromFile(CREDENTIALS_PATH);
+  // Try platform secure store first, then fall back to default file
+  return readFromSecureStore() || readFromFile(CREDENTIALS_PATH);
 }
 
 export function getSubscriptionInfo(credentialsPath) {
