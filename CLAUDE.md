@@ -19,9 +19,9 @@ A dashboard that visualizes Claude Code usage by parsing JSONL session logs from
 
 **ES modules throughout** (`"type": "module"` in package.json). No build step — the frontend uses native ES module imports via `<script type="module">`.
 
-### CLI (`bin/cli.js`)
+### CLI (`bin/cli.cjs`)
 
-npm package entry point. Spawns the server as a child process with `stdio: 'inherit'` and forwards signals.
+npm package entry point (CJS). Uses `spawnSync` to run `server/index.js` as a child process with `stdio: 'inherit'`. **Must use `spawnSync`** — async `spawn()` or dynamic `import()` causes the parent process to exit on Windows, making npx return to the shell prompt while the server runs orphaned in the background.
 
 ### Server (Express 5, `server/`)
 
@@ -46,3 +46,10 @@ npm package entry point. Spawns the server as a child process with `stdio: 'inhe
 - Date filtering and time bucketing use local timezone (not UTC).
 - The `/api/sessions` endpoint supports server-side pagination (`page`, `limit` params).
 - All API endpoints accept `from`, `to`, `project`, and `model` query params for filtering.
+
+## Pre-publish Checklist
+
+Before every `npm publish`, verify:
+
+1. **`npm test`** — all tests pass
+2. **npx foreground test** — run `npm pack`, install the tarball in a temp dir, run `npx claude-usage-dashboard`, and confirm the process stays in the foreground (parent PID stays alive, shell prompt does NOT return). This catches regressions in `bin/cli.cjs` where async patterns (`spawn()`, `import()`) let the parent exit on Windows.
