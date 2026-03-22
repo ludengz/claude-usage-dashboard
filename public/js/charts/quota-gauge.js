@@ -95,9 +95,18 @@ export function renderQuotaGauges(container, data, opts = {}) {
     const proj = document.createElement('div');
     proj.style.cssText = 'margin-top:12px;padding:8px 12px;background:#1e293b;border-radius:6px;font-size:12px;color:#94a3b8';
     const monthlyProjected = projectedCost * (30 / 7);
+
+    // Format the quota window range for display
+    const dtFmt = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+    const tzParts = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(new Date());
+    const tz = tzParts.find(p => p.type === 'timeZoneName')?.value || '';
+    const windowRange = opts.quotaWindowFrom && opts.quotaWindowTo
+      ? ` <span style="color:#64748b">(${opts.quotaWindowFrom.toLocaleString(undefined, dtFmt)} → ${opts.quotaWindowTo.toLocaleString(undefined, dtFmt)} ${tz})</span>`
+      : '';
+
     proj.innerHTML =
-      `7-day usage: <strong style="color:#e2e8f0">$${opts.cost7d.toFixed(2)}</strong> API cost at <strong style="color:#e2e8f0">${sevenDay.utilization.toFixed(1)}%</strong> quota` +
-      ` · Projected at 100%: <strong style="color:#fbbf24">$${projectedCost.toFixed(2)}</strong>/week` +
+      `7-day usage: <strong style="color:#e2e8f0">$${opts.cost7d.toFixed(2)}</strong> API cost at <strong style="color:#e2e8f0">${sevenDay.utilization.toFixed(1)}%</strong> quota${windowRange}` +
+      `<br>Projected at 100%: <strong style="color:#fbbf24">$${projectedCost.toFixed(2)}</strong>/week` +
       ` · <strong style="color:#fbbf24">$${monthlyProjected.toFixed(2)}</strong>/month`;
     container.appendChild(proj);
   }

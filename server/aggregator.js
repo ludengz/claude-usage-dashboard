@@ -2,9 +2,13 @@ import { calculateRecordCost, getModelPricing } from './pricing.js';
 
 export function filterByDateRange(records, from, to) {
   if (!from && !to) return records;
-  // Use local time boundaries (no Z suffix = local timezone)
-  const start = from ? new Date(from + 'T00:00:00.000').getTime() : -Infinity;
-  const end = to ? new Date(to + 'T23:59:59.999').getTime() : Infinity;
+  // Support both date-only (YYYY-MM-DD → local time boundaries) and full ISO timestamps
+  const start = from
+    ? new Date(from.includes('T') ? from : from + 'T00:00:00.000').getTime()
+    : -Infinity;
+  const end = to
+    ? new Date(to.includes('T') ? to : to + 'T23:59:59.999').getTime()
+    : Infinity;
   return records.filter(r => {
     const t = new Date(r.timestamp).getTime();
     return t >= start && t <= end;

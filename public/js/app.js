@@ -47,18 +47,40 @@ function getTimezoneAbbr() {
   return tz ? tz.value : '';
 }
 
+// Derive the 7-day quota window from resets_at, truncated to the hour
+function getQuotaWindow(sevenDay) {
+  if (!sevenDay?.resets_at) return null;
+  const resetsAt = new Date(sevenDay.resets_at);
+  resetsAt.setMinutes(0, 0, 0);
+  const windowStart = new Date(resetsAt);
+  windowStart.setDate(windowStart.getDate() - 7);
+  return { from: windowStart, to: resetsAt };
+}
+
 async function loadQuota() {
   try {
-    const today = new Date();
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(today.getDate() - 7);
-    const fmt = d => d.toISOString().slice(0, 10);
+    const data = await fetchQuota();
 
-    const [data, cost7d] = await Promise.all([
-      fetchQuota(),
-      fetchCost({ from: fmt(sevenDaysAgo), to: fmt(today), plan: state.plan.plan }),
-    ]);
-    renderQuotaGauges(document.getElementById('chart-quota'), data, { cost7d: cost7d.api_equivalent_cost_usd });
+    // Use the actual quota window (resets_at - 7 days → resets_at)
+    let cost7dValue = 0;
+    let quotaWindowFrom = null;
+    let quotaWindowTo = null;
+    const sevenDay = data.seven_day;
+    const window = getQuotaWindow(sevenDay);
+    if (window && sevenDay.utilization > 0) {
+      quotaWindowFrom = window.from;
+      quotaWindowTo = window.to;
+      const cost7d = await fetchCost({
+        from: window.from.toISOString(),
+        to: window.to.toISOString(),
+        plan: state.plan.plan,
+      });
+      cost7dValue = cost7d.api_equivalent_cost_usd;
+    }
+
+    renderQuotaGauges(document.getElementById('chart-quota'), data, {
+      cost7d: cost7dValue, quotaWindowFrom, quotaWindowTo,
+    });
     const el = document.getElementById('quota-last-updated');
     if (el && data.lastFetched) el.textContent = `Updated ${new Date(data.lastFetched).toLocaleTimeString()} ${getTimezoneAbbr()}`;
   } catch { /* silently degrade */ }
@@ -265,9 +287,18 @@ function init() {
     }
   }).catch(() => {});
 
-  loadAll();
-  loadQuota();
-  startAutoRefresh();
+  // Default date range to the 7-day quota window (resets_at - 7 days → resets_at)
+  fetchQuota().then(data => {
+    const window = getQuotaWindow(data.seven_day);
+    if (window) {
+      const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      datePicker.setRange(fmt(window.from), fmt(window.to));
+    }
+  }).catch(() => {}).finally(() => {
+    loadAll();
+    loadQuota();
+    startAutoRefresh();
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);
