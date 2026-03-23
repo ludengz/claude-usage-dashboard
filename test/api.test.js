@@ -149,16 +149,18 @@ describe('Multi-machine sync mode', () => {
     }));
 
     syncApp = express();
-    // cacheTtlMs: 0 ensures every request triggers a fresh sync+parse,
-    // so tests can verify sync behavior without waiting for cache expiry
+    // syncIntervalMs: 100000 prevents background re-sync during tests
+    // cacheTtlMs: 0 ensures every request re-parses from disk
     syncApp.use('/api', createApiRouter(localDir, {
       cacheTtlMs: 0,
       syncDir: syncDir,
-      machineName: 'test-mac'
+      machineName: 'test-mac',
+      syncIntervalMs: 100000
     }));
     syncServer = syncApp.listen(0, () => {
       syncBaseUrl = `http://localhost:${syncServer.address().port}`;
-      done();
+      // Wait for background sync to complete before running tests
+      setTimeout(done, 200);
     });
   });
 

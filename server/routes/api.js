@@ -12,12 +12,23 @@ export function createApiRouter(logBaseDir, options = {}) {
   let cachedRecords = [];
   let lastRefreshed = null;
 
-  async function refreshRecords() {
+  // Background sync: runs periodically without blocking API requests
+  if (options.syncDir) {
+    const SYNC_INTERVAL_MS = options.syncIntervalMs || 30000;
+    const runBackgroundSync = () => {
+      syncLocalToShared(logBaseDir, options.syncDir, options.machineName).catch(err => {
+        console.warn('Background sync failed:', err.message);
+      });
+    };
+    runBackgroundSync();
+    setInterval(runBackgroundSync, SYNC_INTERVAL_MS).unref();
+  }
+
+  function refreshRecords() {
     const now = Date.now();
     if (lastRefreshed && (now - lastRefreshed) < CACHE_TTL_MS) return cachedRecords;
     try {
       if (options.syncDir) {
-        await syncLocalToShared(logBaseDir, options.syncDir, options.machineName);
         cachedRecords = parseMultiMachineDirectory(options.syncDir);
       } else {
         cachedRecords = parseLogDirectory(logBaseDir);
@@ -31,16 +42,16 @@ export function createApiRouter(logBaseDir, options = {}) {
     return cachedRecords;
   }
 
-  async function applyFilters(query) {
-    let records = filterByDateRange(await refreshRecords(), query.from, query.to);
+  function applyFilters(query) {
+    let records = filterByDateRange(refreshRecords(), query.from, query.to);
     if (query.project) records = records.filter(r => r.project === query.project);
     if (query.model) records = records.filter(r => r.model === query.model);
     return records;
   }
 
-  router.get('/usage', async (req, res) => {
+  router.get('/usage', (req, res) => {
     try {
-      const records = await applyFilters(req.query);
+      const records = applyFilters(req.query);
       const granularity = req.query.granularity || autoGranularity(req.query.from, req.query.to);
       const buckets = aggregateByTime(records, granularity);
       const total = { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0, estimated_api_cost_usd: 0 };
@@ -56,11 +67,11 @@ export function createApiRouter(logBaseDir, options = {}) {
     }
   });
 
-  router.get('/models', async (req, res) => { res.json({ models: aggregateByModel(await applyFilters(req.query)) }); });
-  router.get('/projects', async (req, res) => { res.json({ projects: aggregateByProject(await applyFilters(req.query)) }); });
+  router.get('/models', (req, res) => { res.json({ models: aggregateByModel(applyFilters(req.query)) }); });
+  router.get('/projects', (req, res) => { res.json({ projects: aggregateByProject(applyFilters(req.query)) }); });
 
-  router.get('/sessions', async (req, res) => {
-    const records = await applyFilters(req.query);
+  router.get('/sessions', (req, res) => {
+    const records = applyFilters(req.query);
     let sessions = aggregateBySession(records);
     const sort = req.query.sort || 'date';
     const order = req.query.order || 'desc';
@@ -77,8 +88,8 @@ export function createApiRouter(logBaseDir, options = {}) {
     res.json({ sessions, pagination: { page, limit, total_sessions: totalSessions, total_pages: totalPages }, totals: { total_tokens: totalTokens, estimated_cost_usd: Math.round(totalCost * 100) / 100 } });
   });
 
-  router.get('/cost', async (req, res) => {
-    const records = await applyFilters(req.query);
+  router.get('/cost', (req, res) => {
+    const records = applyFilters(req.query);
     const plan = req.query.plan || 'max5x';
     const customPrice = req.query.customPrice ? parseFloat(req.query.customPrice) : null;
     const subscriptionCost = customPrice || PLAN_DEFAULTS[plan] || 100;
@@ -100,7 +111,7 @@ export function createApiRouter(logBaseDir, options = {}) {
     res.json({ plan, subscription_cost_usd: subscriptionCost, api_equivalent_cost_usd: apiCost, savings_usd: Math.round(savings * 100) / 100, savings_percent: apiCost > 0 ? Math.round((savings / apiCost) * 1000) / 10 : 0, cost_per_day: costPerDay });
   });
 
-  router.get('/cache', async (req, res) => { res.json(aggregateCache(await applyFilters(req.query))); });
+  router.get('/cache', (req, res) => { res.json(aggregateCache(applyFilters(req.query))); });
 
   const quotaFetcher = options.quotaFetcher || createQuotaFetcher();
   router.get('/quota', async (req, res) => {
@@ -117,8 +128,8 @@ export function createApiRouter(logBaseDir, options = {}) {
     res.json(info || { plan: null, subscriptionType: null, rateLimitTier: null });
   });
 
-  router.get('/status', async (req, res) => {
-    await refreshRecords();
+  router.get('/status', (req, res) => {
+    refreshRecords();
     res.json({
       record_count: cachedRecords.length,
       last_refreshed: lastRefreshed ? new Date(lastRefreshed).toISOString() : null,
