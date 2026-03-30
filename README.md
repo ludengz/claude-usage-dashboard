@@ -15,21 +15,21 @@ npx claude-usage-dashboard
 
 ## What You'll See
 
-### See Every Machine in One Place
+### :computer: See Every Machine in One Place
 
 Use Claude on a laptop, a desktop, and a work machine? Most dashboards only see the one they're running on. This one syncs across all of them.
 
 Point it at any shared folder — Google Drive, Dropbox, OneDrive, a NAS, an rsync target — and every machine's logs roll up into one unified view. No server. No account. Just a folder you already have.
 
-### Know What You're Spending
+### :dollar: Know What You're Spending
 
 Real-time projected API cost at your current usage rate — weekly and monthly. At 5% quota utilization, you might be burning through **$3,600/week** equivalent. The dashboard calculates this from your actual quota window, not estimates.
 
-### Track Your Quota in Real Time
+### :bar_chart: Track Your Quota in Real Time
 
 Live utilization gauges for 5-hour, 7-day, and per-model quotas pulled directly from the Anthropic API. Auto-detects your plan tier (Pro / Max 5x / Max 20x). Never get throttled by surprise again.
 
-### Track Your Quota Across Cycles
+### :chart_with_upwards_trend: Track Your Quota Across Cycles
 
 Anthropic doesn't publish exact token limits, and those limits can change without notice. The Quota Cycle History section gives you a running record of each 7-day cycle so you can see exactly how much you got and whether it stayed consistent.
 
@@ -37,11 +37,11 @@ For each cycle, the dashboard projects what your full token quota would be at 10
 
 That delta is the key signal: if your projected quota drops from one cycle to the next without you changing how you work, something changed on the platform side. Track your actual consumption week-over-week so you have real numbers when something feels off — not just a gut feeling. Up to 10 past cycles are retained across all your machines.
 
-### Find What's Eating Your Tokens
+### :mag: Find What's Eating Your Tokens
 
 Per-project and per-session cost breakdowns show exactly where your usage goes. Sortable session table with cost, duration, and full token breakdown. Spot the expensive sessions instantly.
 
-### Understand Your Cache Efficiency
+### :zap: Understand Your Cache Efficiency
 
 You'll probably discover that ~95% of your tokens are cache reads at 1/10th the cost. The dashboard visualizes cache read vs. cache write vs. uncached requests so you can see how efficiently Claude is using context.
 
