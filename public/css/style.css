@@ -261,7 +261,8 @@ body {
 
 .delta-positive { color: var(--green); }
 .delta-negative { color: var(--red); }
-.col-highlight { color: var(--amber); font-weight: 600; }
+.table-container th.col-highlight,
+.table-container td.col-highlight { color: var(--amber); font-weight: 600; }
 
 .cycle-summary {
   font-size: 12px;
