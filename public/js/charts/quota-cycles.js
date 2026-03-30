@@ -17,19 +17,32 @@ function getModelData(cycle, modelKey) {
   return cycle.models?.[modelKey] || { utilization: 0, actualTokens: 0, projectedTokensAt100: null, actualCost: 0, projectedCostAt100: null };
 }
 
+const MAX_DISPLAY_CYCLES = 6;
+
 export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}) {
   if (!container) return;
+
+  // Check if per-model utilization data is available
+  const hasModelData = data.currentCycle &&
+    ((data.currentCycle.models?.opus?.utilization > 0) ||
+     (data.currentCycle.models?.sonnet?.utilization > 0));
+
+  // --- Model toggle visibility ---
+  const toggleEl = document.getElementById('cycle-model-toggle');
+  if (toggleEl) {
+    toggleEl.style.display = hasModelData ? '' : 'none';
+  }
 
   // --- Projection Cards ---
   const cardsEl = document.getElementById('cycle-projection-cards');
   if (cardsEl) {
     cardsEl.innerHTML = '';
     if (data.currentCycle) {
-      const items = [
-        { label: 'Total at 100%', key: 'overall' },
-        { label: 'Opus at 100%', key: 'opus' },
-        { label: 'Sonnet at 100%', key: 'sonnet' },
-      ];
+      const items = [{ label: 'Total at 100%', key: 'overall' }];
+      if (hasModelData) {
+        items.push({ label: 'Opus at 100%', key: 'opus' });
+        items.push({ label: 'Sonnet at 100%', key: 'sonnet' });
+      }
       for (const item of items) {
         const d = getModelData(data.currentCycle, item.key);
         const card = document.createElement('div');
@@ -56,7 +69,10 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     return;
   }
 
-  const chartData = allCycles.map(c => {
+  // Show only the most recent N cycles
+  const displayAll = allCycles.slice(-MAX_DISPLAY_CYCLES);
+
+  const chartData = displayAll.map(c => {
     const d = getModelData(c, modelKey);
     return {
       label: `${fmtDate(c.start)} – ${fmtDate(c.resets_at)}`,
@@ -124,14 +140,12 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
   if (!tableEl) return;
   tableEl.innerHTML = '';
 
-  if (allCycles.length === 0) return;
-
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   thead.innerHTML = `<tr>
     <th>Cycle</th>
     <th class="align-right">Utilization</th>
-    <th class="align-right">Actual Tokens</th>
+    <th class="align-right">Tokens (non-cached)</th>
     <th class="align-right">Projected at 100%</th>
     <th class="align-right">Actual Cost</th>
     <th class="align-right">Projected Cost</th>
@@ -140,7 +154,8 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
-  const displayCycles = [...allCycles].reverse();
+  // Show only recent cycles, newest first
+  const displayCycles = [...displayAll].reverse();
   for (let i = 0; i < displayCycles.length; i++) {
     const c = displayCycles[i];
     const d = getModelData(c, modelKey);
