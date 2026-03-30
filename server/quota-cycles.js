@@ -21,7 +21,10 @@ export function computeCycleData(records, quotaData) {
   let sonnetTokens = 0, sonnetCost = 0;
 
   for (const r of records) {
-    const tokens = r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_creation_tokens;
+    // Count only non-cached tokens (input + output) — cache reads are high-volume
+    // but near-free, and including them inflates the token metric without reflecting
+    // actual quota consumption
+    const tokens = r.input_tokens + r.output_tokens;
     const cost = calculateRecordCost(r);
     totalTokens += tokens;
     totalCost += cost;

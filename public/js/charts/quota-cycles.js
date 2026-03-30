@@ -75,7 +75,10 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     .attr('height', height + margin.top + margin.bottom)
     .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
 
-  const x0 = d3.scaleBand().domain(chartData.map(d => d.label)).range([0, width]).padding(0.3);
+  // Cap the chart width used for bars when few cycles, so bars don't stretch full-width
+  const maxBarGroupWidth = 120;
+  const chartWidth = Math.min(width, chartData.length * (maxBarGroupWidth + 40));
+  const x0 = d3.scaleBand().domain(chartData.map(d => d.label)).range([0, chartWidth]).padding(0.3);
   const maxVal = d3.max(chartData, d => Math.max(d.actual, d.projected || 0)) || 1;
   const y = d3.scaleLinear().domain([0, maxVal * 1.1]).range([height, 0]);
 
@@ -87,7 +90,7 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     .selectAll('text').attr('fill', '#94a3b8').style('font-size', '10px');
   svg.selectAll('.domain, .tick line').attr('stroke', '#334155');
 
-  const barWidth = x0.bandwidth() / 2.5;
+  const barWidth = Math.min(x0.bandwidth() / 2.5, 40);
 
   // Projected bars (behind, semi-transparent)
   svg.selectAll('.bar-projected').data(chartData.filter(d => d.projected != null))
