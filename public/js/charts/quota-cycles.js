@@ -36,12 +36,7 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
 
   // --- Inline projection summary in header ---
   const summaryEl = document.getElementById('cycle-projection-summary');
-  if (summaryEl && data.currentCycle) {
-    const d = getModelData(data.currentCycle, modelKey);
-    summaryEl.innerHTML = d.projectedTokensAt100 != null
-      ? `(<strong>${fmt(d.projectedTokensAt100)}</strong> projected@100% excl CR, actual: ${fmt(d.actualTokens)})`
-      : '';
-  } else if (summaryEl) {
+  if (summaryEl) {
     summaryEl.textContent = '';
   }
 
