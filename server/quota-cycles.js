@@ -76,6 +76,15 @@ export function computeCycleData(records, quotaData) {
   };
 }
 
+/**
+ * Update the quota cycle snapshot file for this machine.
+ * Called after each successful quota API fetch.
+ *
+ * @param {object} quotaData - Quota API response (must have available === true)
+ * @param {string} logBaseDir - This machine's log directory (~/.claude/projects/)
+ * @param {string} machineName - Identifier for this machine
+ * @param {string} [snapshotDir] - Directory for snapshot files (defaults to ~/.claude/)
+ */
 export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, snapshotDir) {
   if (!quotaData?.available || !quotaData.seven_day?.resets_at) return;
 
@@ -114,6 +123,14 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
   fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2));
 }
 
+/**
+ * Load and merge quota cycle data from all machines.
+ *
+ * @param {string} machineName - This machine's name
+ * @param {string|null} syncDir - Shared sync directory (null if single-machine)
+ * @param {string} [snapshotDir] - Directory for snapshot files (defaults to ~/.claude/)
+ * @returns {{ currentCycle: object|null, history: object[], machines: string[] }}
+ */
 export function loadQuotaCycles(machineName, syncDir, snapshotDir) {
   const dir = snapshotDir || syncDir || path.join(os.homedir(), '.claude');
   const empty = { currentCycle: null, history: [], machines: [] };
@@ -164,7 +181,7 @@ function mergeCycles(cycles) {
 
   let bestKey = null, bestCount = 0;
   for (const [key, arr] of byReset) {
-    if (arr.length > bestCount) { bestKey = key; bestCount = arr.length; }
+    if (arr.length > bestCount || (arr.length === bestCount && key > bestKey)) { bestKey = key; bestCount = arr.length; }
   }
 
   const sameCycle = byReset.get(bestKey);
