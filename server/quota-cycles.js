@@ -92,8 +92,12 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
   const dir = snapshotDir || syncDir || path.join(os.homedir(), '.claude');
   const filePath = path.join(dir, `quota-cycles-${machineName}.json`);
 
-  const resetsAt = quotaData.seven_day.resets_at;
-  const start = new Date(new Date(resetsAt).getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  // Normalize resets_at to second precision — the API returns varying microseconds
+  // on each call (e.g. .905316 vs .581788) which would cause false cycle switches
+  const rawResetsAt = new Date(quotaData.seven_day.resets_at);
+  rawResetsAt.setMilliseconds(0);
+  const resetsAt = rawResetsAt.toISOString();
+  const start = new Date(rawResetsAt.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   let snapshot;
   try {
@@ -102,7 +106,11 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
     snapshot = { schemaVersion: 1, machineName, currentCycle: null, history: [] };
   }
 
-  if (snapshot.currentCycle && snapshot.currentCycle.resets_at !== resetsAt) {
+  // Compare normalized timestamps to detect actual cycle boundary changes
+  const storedResetNorm = snapshot.currentCycle
+    ? new Date(snapshot.currentCycle.resets_at).setMilliseconds(0)
+    : null;
+  if (snapshot.currentCycle && storedResetNorm !== rawResetsAt.getTime()) {
     snapshot.history.unshift(snapshot.currentCycle);
     if (snapshot.history.length > MAX_HISTORY) {
       snapshot.history = snapshot.history.slice(0, MAX_HISTORY);

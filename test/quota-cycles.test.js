@@ -15,7 +15,7 @@ describe('computeCycleData', () => {
       { model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 400, cache_read_tokens: 100, cache_creation_tokens: 50 },
     ];
     const quotaData = {
-      seven_day: { utilization: 50, resets_at: '2026-04-05T00:00:00Z' },
+      seven_day: { utilization: 50, resets_at: '2026-04-05T00:00:00.000Z' },
       seven_day_opus: { utilization: 30 },
       seven_day_sonnet: { utilization: 60 },
     };
@@ -46,7 +46,7 @@ describe('computeCycleData', () => {
       { model: 'claude-sonnet-4-6', input_tokens: 100, output_tokens: 50, cache_read_tokens: 0, cache_creation_tokens: 0 },
     ];
     const quotaData = {
-      seven_day: { utilization: 0, resets_at: '2026-04-05T00:00:00Z' },
+      seven_day: { utilization: 0, resets_at: '2026-04-05T00:00:00.000Z' },
       seven_day_sonnet: { utilization: 0 },
     };
     const result = computeCycleData(records, quotaData);
@@ -60,7 +60,7 @@ describe('computeCycleData', () => {
       { model: 'claude-haiku-4-5', input_tokens: 5000, output_tokens: 2000, cache_read_tokens: 500, cache_creation_tokens: 200 },
     ];
     const quotaData = {
-      seven_day: { utilization: 40, resets_at: '2026-04-05T00:00:00Z' },
+      seven_day: { utilization: 40, resets_at: '2026-04-05T00:00:00.000Z' },
     };
     const result = computeCycleData(records, quotaData);
     expect(result.overall.actualTokens).to.equal(7700);
@@ -106,7 +106,7 @@ describe('updateQuotaCycleSnapshot', () => {
     ]);
     const quotaData = {
       available: true,
-      seven_day: { utilization: 40, resets_at: '2026-04-05T00:00:00Z' },
+      seven_day: { utilization: 40, resets_at: '2026-04-05T00:00:00.000Z' },
       seven_day_sonnet: { utilization: 40 },
     };
     updateQuotaCycleSnapshot(quotaData, logDir, 'test-machine', tmpDir);
@@ -116,7 +116,7 @@ describe('updateQuotaCycleSnapshot', () => {
     const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
     expect(data.schemaVersion).to.equal(1);
     expect(data.machineName).to.equal('test-machine');
-    expect(data.currentCycle.resets_at).to.equal('2026-04-05T00:00:00Z');
+    expect(data.currentCycle.resets_at).to.equal('2026-04-05T00:00:00.000Z');
     expect(data.currentCycle.overall.actualTokens).to.equal(1650);
     expect(data.history).to.have.length(0);
   });
@@ -131,7 +131,7 @@ describe('updateQuotaCycleSnapshot', () => {
       schemaVersion: 1,
       machineName: 'test-machine',
       currentCycle: {
-        resets_at: '2026-04-05T00:00:00Z',
+        resets_at: '2026-04-05T00:00:00.000Z',
         start: '2026-03-29T00:00:00Z',
         lastUpdated: '2026-04-04T23:00:00Z',
         overall: { utilization: 80, actualTokens: 20000, projectedTokensAt100: 25000, actualCost: 15.00, projectedCostAt100: 18.75 },
@@ -147,15 +147,15 @@ describe('updateQuotaCycleSnapshot', () => {
     // Now update with new resets_at (cycle switched)
     const quotaData = {
       available: true,
-      seven_day: { utilization: 10, resets_at: '2026-04-12T00:00:00Z' },
+      seven_day: { utilization: 10, resets_at: '2026-04-12T00:00:00.000Z' },
       seven_day_sonnet: { utilization: 10 },
     };
     updateQuotaCycleSnapshot(quotaData, logDir, 'test-machine', tmpDir);
 
     const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'quota-cycles-test-machine.json'), 'utf-8'));
-    expect(data.currentCycle.resets_at).to.equal('2026-04-12T00:00:00Z');
+    expect(data.currentCycle.resets_at).to.equal('2026-04-12T00:00:00.000Z');
     expect(data.history).to.have.length(1);
-    expect(data.history[0].resets_at).to.equal('2026-04-05T00:00:00Z');
+    expect(data.history[0].resets_at).to.equal('2026-04-05T00:00:00.000Z');
     expect(data.history[0].overall.actualTokens).to.equal(20000);
   });
 
@@ -165,7 +165,7 @@ describe('updateQuotaCycleSnapshot', () => {
       schemaVersion: 1,
       machineName: 'test-machine',
       currentCycle: {
-        resets_at: '2026-04-05T00:00:00Z',
+        resets_at: '2026-04-05T00:00:00.000Z',
         start: '2026-03-29T00:00:00Z',
         lastUpdated: '2026-04-04T23:00:00Z',
         overall: { utilization: 50, actualTokens: 1000, projectedTokensAt100: 2000, actualCost: 1.00, projectedCostAt100: 2.00 },
@@ -182,7 +182,7 @@ describe('updateQuotaCycleSnapshot', () => {
 
     const quotaData = {
       available: true,
-      seven_day: { utilization: 5, resets_at: '2026-04-12T00:00:00Z' },
+      seven_day: { utilization: 5, resets_at: '2026-04-12T00:00:00.000Z' },
     };
     updateQuotaCycleSnapshot(quotaData, logDir, 'test-machine', tmpDir);
 
@@ -212,7 +212,7 @@ describe('loadQuotaCycles', () => {
     const machine1 = {
       schemaVersion: 1, machineName: 'laptop',
       currentCycle: {
-        resets_at: '2026-04-05T00:00:00Z', start: '2026-03-29T00:00:00Z', lastUpdated: '2026-04-01T10:00:00Z',
+        resets_at: '2026-04-05T00:00:00.000Z', start: '2026-03-29T00:00:00Z', lastUpdated: '2026-04-01T10:00:00Z',
         overall: { utilization: 50, actualTokens: 10000, projectedTokensAt100: 20000, actualCost: 5.00, projectedCostAt100: 10.00 },
         models: {
           opus: { utilization: 30, actualTokens: 3000, projectedTokensAt100: 10000, actualCost: 3.00, projectedCostAt100: 10.00 },
@@ -224,7 +224,7 @@ describe('loadQuotaCycles', () => {
     const machine2 = {
       schemaVersion: 1, machineName: 'desktop',
       currentCycle: {
-        resets_at: '2026-04-05T00:00:00Z', start: '2026-03-29T00:00:00Z', lastUpdated: '2026-04-01T12:00:00Z',
+        resets_at: '2026-04-05T00:00:00.000Z', start: '2026-03-29T00:00:00Z', lastUpdated: '2026-04-01T12:00:00Z',
         overall: { utilization: 50, actualTokens: 5000, projectedTokensAt100: 10000, actualCost: 2.50, projectedCostAt100: 5.00 },
         models: {
           opus: { utilization: 30, actualTokens: 1000, projectedTokensAt100: 3333, actualCost: 1.00, projectedCostAt100: 3.33 },
@@ -263,7 +263,7 @@ describe('GET /api/quota-cycles (integration)', () => {
     const snapshot = {
       schemaVersion: 1, machineName: 'test',
       currentCycle: {
-        resets_at: '2026-04-05T00:00:00Z', start: '2026-03-29T00:00:00Z', lastUpdated: '2026-04-01T12:00:00Z',
+        resets_at: '2026-04-05T00:00:00.000Z', start: '2026-03-29T00:00:00Z', lastUpdated: '2026-04-01T12:00:00Z',
         overall: { utilization: 50, actualTokens: 10000, projectedTokensAt100: 20000, actualCost: 5.00, projectedCostAt100: 10.00 },
         models: {
           opus: { utilization: 0, actualTokens: 0, projectedTokensAt100: null, actualCost: 0, projectedCostAt100: null },
@@ -302,7 +302,7 @@ describe('GET /api/quota-cycles (integration)', () => {
     const data = await res.json();
     expect(res.status).to.equal(200);
     expect(data.currentCycle).to.be.an('object');
-    expect(data.currentCycle.resets_at).to.equal('2026-04-05T00:00:00Z');
+    expect(data.currentCycle.resets_at).to.equal('2026-04-05T00:00:00.000Z');
     expect(data.currentCycle.overall.actualTokens).to.equal(10000);
     expect(data.history).to.have.length(1);
     expect(data.machines).to.include('test');
