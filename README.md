@@ -11,7 +11,7 @@ Your $200/month Max plan might be consuming **$15,000+/month** in API-equivalent
 npx claude-usage-dashboard
 ```
 
-![Dashboard Screenshot](docs/screenshots/dashboard.png)
+![Dashboard Screenshot](docs/screenshots/dashboard.png?v=2)
 
 ## What You'll See
 
