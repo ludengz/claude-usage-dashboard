@@ -277,7 +277,7 @@ body {
   gap: 12px;
   align-items: start;
 }
-.quota-cycles-chart { min-height: 160px; }
+.quota-cycles-chart { min-height: 160px; position: relative; }
 .quota-cycles-table-wrap { overflow-x: auto; }
 
 @media (max-width: 768px) {

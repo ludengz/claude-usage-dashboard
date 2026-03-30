@@ -107,10 +107,11 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
 
   function showTip(event, d) {
     const proj = d.projected != null ? fmt(d.projected) : '—';
+    const rect = container.getBoundingClientRect();
     tooltip.html(`<strong>${d.label}</strong><br>Actual: ${fmt(d.actual)}<br>Proj@100%: ${proj}`)
       .style('opacity', 1)
-      .style('left', (event.offsetX + 12) + 'px')
-      .style('top', (event.offsetY - 10) + 'px');
+      .style('left', (event.clientX - rect.left + 12) + 'px')
+      .style('top', (event.clientY - rect.top - 10) + 'px');
   }
   function hideTip() { tooltip.style('opacity', 0); }
 
