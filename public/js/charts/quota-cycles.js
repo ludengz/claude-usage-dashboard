@@ -39,7 +39,7 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
   if (summaryEl && data.currentCycle) {
     const d = getModelData(data.currentCycle, modelKey);
     summaryEl.innerHTML = d.projectedTokensAt100 != null
-      ? `(<strong>${fmt(d.projectedTokensAt100)}</strong> projected at 100%, actual: ${fmt(d.actualTokens)})`
+      ? `(<strong>${fmt(d.projectedTokensAt100)}</strong> projected@100% excl CR, actual: ${fmt(d.actualTokens)})`
       : '';
   } else if (summaryEl) {
     summaryEl.textContent = '';
@@ -134,9 +134,9 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     <th class="align-right">CW</th>
     <th class="align-right">Total</th>
     <th class="align-right">Excl CR</th>
-    <th class="align-right col-highlight">Proj@100%</th>
     <th class="align-right">Cost</th>
-    <th class="align-right">Proj Cost</th>
+    <th class="align-right col-highlight">Proj Tokens</th>
+    <th class="align-right col-highlight">Proj Cost</th>
     <th class="align-right">\u0394 Prev</th>
   </tr>`;
   table.appendChild(thead);
@@ -171,9 +171,9 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
       <td class="align-right">${fmt(t.cacheCreation)}</td>
       <td class="align-right">${fmt(totalInclCR)}</td>
       <td class="align-right">${fmt(d.actualTokens)}</td>
-      <td class="align-right col-highlight">${fmt(d.projectedTokensAt100)}</td>
       <td class="align-right">${fmtCost(d.actualCost)}</td>
-      <td class="align-right">${fmtCost(d.projectedCostAt100)}</td>
+      <td class="align-right col-highlight">${fmt(d.projectedTokensAt100)}</td>
+      <td class="align-right col-highlight">${fmtCost(d.projectedCostAt100)}</td>
       <td class="align-right ${deltaClass}">${deltaStr}</td>
     `;
     tbody.appendChild(tr);
