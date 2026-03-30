@@ -259,28 +259,27 @@ body {
 }
 #quota-section .chart-container { min-height: auto; }
 
-.cycle-projection-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.cycle-projection-cards .card {
-  text-align: center;
-}
-.cycle-projection-cards .card-value {
-  color: var(--amber);
-}
-.cycle-projection-cards .card-sub {
-  color: var(--text-muted);
-}
 .delta-positive { color: var(--green); }
 .delta-negative { color: var(--red); }
 
-#quota-cycles-section .chart-container { min-height: 250px; }
+.cycle-summary {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--amber);
+  margin-left: 8px;
+}
+
+.quota-cycles-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.quota-cycles-chart { min-height: 160px; }
+.quota-cycles-table-wrap { overflow-x: auto; }
 
 @media (max-width: 768px) {
   .summary-cards { grid-template-columns: repeat(2, 1fr); }
   .chart-row-3 { grid-template-columns: 1fr; }
-  .cycle-projection-cards { grid-template-columns: 1fr; }
+  .quota-cycles-layout { grid-template-columns: 1fr; }
 }

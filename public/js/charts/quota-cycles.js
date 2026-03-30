@@ -22,7 +22,6 @@ const MAX_DISPLAY_CYCLES = 6;
 export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}) {
   if (!container) return;
 
-  // Check if per-model utilization data is available
   const hasModelData = data.currentCycle &&
     ((data.currentCycle.models?.opus?.utilization > 0) ||
      (data.currentCycle.models?.sonnet?.utilization > 0));
@@ -35,31 +34,18 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     });
   }
 
-  // --- Projection Cards ---
-  const cardsEl = document.getElementById('cycle-projection-cards');
-  if (cardsEl) {
-    cardsEl.innerHTML = '';
-    if (data.currentCycle) {
-      const items = [{ label: 'Total at 100%', key: 'overall' }];
-      if (hasModelData) {
-        items.push({ label: 'Opus at 100%', key: 'opus' });
-        items.push({ label: 'Sonnet at 100%', key: 'sonnet' });
-      }
-      for (const item of items) {
-        const d = getModelData(data.currentCycle, item.key);
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.innerHTML = `
-          <div class="card-label">${item.label}</div>
-          <div class="card-value">${fmt(d.projectedTokensAt100)}</div>
-          <div class="card-sub">actual: ${fmt(d.actualTokens)} (excl cache read)</div>
-        `;
-        cardsEl.appendChild(card);
-      }
-    }
+  // --- Inline projection summary in header ---
+  const summaryEl = document.getElementById('cycle-projection-summary');
+  if (summaryEl && data.currentCycle) {
+    const d = getModelData(data.currentCycle, modelKey);
+    summaryEl.textContent = d.projectedTokensAt100 != null
+      ? `— projected ${fmt(d.projectedTokensAt100)} at 100% (actual: ${fmt(d.actualTokens)})`
+      : '';
+  } else if (summaryEl) {
+    summaryEl.textContent = '';
   }
 
-  // --- Bar Chart ---
+  // --- Bar Chart (compact) ---
   container.innerHTML = '';
 
   const allCycles = [];
@@ -67,46 +53,45 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
   if (data.currentCycle) allCycles.push(data.currentCycle);
 
   if (allCycles.length === 0) {
-    container.innerHTML = '<div style="color:#64748b;text-align:center;padding:40px;font-size:13px">No cycle data yet. Data will accumulate as the dashboard runs.</div>';
+    container.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;font-size:12px">No cycle data yet.</div>';
     return;
   }
 
-  // Show only the most recent N cycles
   const displayAll = allCycles.slice(-MAX_DISPLAY_CYCLES);
 
   const chartData = displayAll.map(c => {
     const d = getModelData(c, modelKey);
     return {
-      label: `${fmtDate(c.start)} – ${fmtDate(c.resets_at)}`,
+      label: `${fmtDate(c.start)}–${fmtDate(c.resets_at)}`,
       actual: d.actualTokens,
       projected: d.projectedTokensAt100,
       isCurrent: c === data.currentCycle,
     };
   });
 
-  const margin = { top: 20, right: 20, bottom: 40, left: 60 };
+  const margin = { top: 14, right: 10, bottom: 24, left: 50 };
   const width = container.clientWidth - margin.left - margin.right;
-  const height = 220;
+  const height = 130;
 
   const svg = d3.select(container).append('svg')
     .attr('width', width + margin.left + margin.right)
     .attr('height', height + margin.top + margin.bottom)
     .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
 
-  const maxBarGroupWidth = 120;
-  const chartWidth = Math.min(width, chartData.length * (maxBarGroupWidth + 40));
+  const maxBarGroupWidth = 100;
+  const chartWidth = Math.min(width, chartData.length * (maxBarGroupWidth + 30));
   const x0 = d3.scaleBand().domain(chartData.map(d => d.label)).range([0, chartWidth]).padding(0.3);
   const maxVal = d3.max(chartData, d => Math.max(d.actual, d.projected || 0)) || 1;
   const y = d3.scaleLinear().domain([0, maxVal * 1.1]).range([height, 0]);
 
   svg.append('g').attr('transform', `translate(0,${height})`)
     .call(d3.axisBottom(x0).tickSize(0))
-    .selectAll('text').attr('fill', '#94a3b8').style('font-size', '10px');
-  svg.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(d => fmt(d)))
-    .selectAll('text').attr('fill', '#94a3b8').style('font-size', '10px');
+    .selectAll('text').attr('fill', '#94a3b8').style('font-size', '9px');
+  svg.append('g').call(d3.axisLeft(y).ticks(4).tickFormat(d => fmt(d)))
+    .selectAll('text').attr('fill', '#94a3b8').style('font-size', '9px');
   svg.selectAll('.domain, .tick line').attr('stroke', '#334155');
 
-  const barWidth = Math.min(x0.bandwidth() / 2.5, 40);
+  const barWidth = Math.min(x0.bandwidth() / 2.5, 30);
 
   svg.selectAll('.bar-projected').data(chartData.filter(d => d.projected != null))
     .join('rect').attr('class', 'bar-projected')
@@ -115,7 +100,7 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     .attr('y', d => y(d.projected))
     .attr('height', d => height - y(d.projected))
     .attr('fill', '#f59e0b').attr('opacity', 0.2)
-    .attr('rx', 3);
+    .attr('rx', 2);
 
   svg.selectAll('.bar-actual').data(chartData)
     .join('rect').attr('class', 'bar-actual')
@@ -124,13 +109,14 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     .attr('y', d => y(d.actual))
     .attr('height', d => height - y(d.actual))
     .attr('fill', d => d.isCurrent ? '#3b82f6' : '#60a5fa')
-    .attr('rx', 3);
+    .attr('rx', 2);
 
-  const legend = svg.append('g').attr('transform', `translate(${width - 260}, -5)`);
-  legend.append('rect').attr('width', 10).attr('height', 10).attr('fill', '#60a5fa').attr('rx', 2);
-  legend.append('text').attr('x', 14).attr('y', 9).text('Actual (excl CR)').attr('fill', '#94a3b8').style('font-size', '10px');
-  legend.append('rect').attr('x', 120).attr('width', 10).attr('height', 10).attr('fill', '#f59e0b').attr('opacity', 0.4).attr('rx', 2);
-  legend.append('text').attr('x', 134).attr('y', 9).text('Projected at 100%').attr('fill', '#94a3b8').style('font-size', '10px');
+  // Compact legend
+  const legend = svg.append('g').attr('transform', `translate(0, -4)`);
+  legend.append('rect').attr('width', 8).attr('height', 8).attr('fill', '#60a5fa').attr('rx', 1);
+  legend.append('text').attr('x', 10).attr('y', 7).text('Actual').attr('fill', '#64748b').style('font-size', '9px');
+  legend.append('rect').attr('x', 50).attr('width', 8).attr('height', 8).attr('fill', '#f59e0b').attr('opacity', 0.4).attr('rx', 1);
+  legend.append('text').attr('x', 60).attr('y', 7).text('Proj@100%').attr('fill', '#64748b').style('font-size', '9px');
 
   // --- History Table ---
   const tableEl = document.getElementById('quota-cycles-table');
@@ -173,7 +159,7 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     }
 
     const isCurrent = c === data.currentCycle;
-    const label = `${fmtDate(c.start)} – ${fmtDate(c.resets_at)}${isCurrent ? ' *' : ''}`;
+    const label = `${fmtDate(c.start)}–${fmtDate(c.resets_at)}${isCurrent ? ' *' : ''}`;
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
