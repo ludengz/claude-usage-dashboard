@@ -1,4 +1,6 @@
-import { describe, it, beforeEach, afterEach } from 'mocha';
+import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
+import express from 'express';
+import { createApiRouter } from '../server/routes/api.js';
 import { expect } from 'chai';
 import fs from 'fs';
 import path from 'path';
@@ -242,5 +244,67 @@ describe('loadQuotaCycles', () => {
     expect(result.currentCycle.overall.projectedTokensAt100).to.equal(30000);
     // Utilization from most recent machine (desktop, lastUpdated 12:00)
     expect(result.currentCycle.overall.utilization).to.equal(50);
+  });
+});
+
+describe('GET /api/quota-cycles (integration)', () => {
+  let apiApp, apiServer, baseUrl, tmpDir, logDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qc-api-'));
+    logDir = path.join(tmpDir, 'logs');
+    const projectDir = path.join(logDir, '-Users-test-Workspace-testproject');
+    fs.mkdirSync(projectDir, { recursive: true });
+    const lines = [
+      JSON.stringify({ type: 'assistant', sessionId: 's1', timestamp: '2026-04-01T10:00:00Z', message: { model: 'claude-sonnet-4-6', usage: { input_tokens: 1000, output_tokens: 500, cache_creation_input_tokens: 100, cache_read_input_tokens: 200 } } }),
+    ];
+    fs.writeFileSync(path.join(projectDir, 'session.jsonl'), lines.join('\n'));
+
+    const snapshot = {
+      schemaVersion: 1, machineName: 'test',
+      currentCycle: {
+        resets_at: '2026-04-05T00:00:00Z', start: '2026-03-29T00:00:00Z', lastUpdated: '2026-04-01T12:00:00Z',
+        overall: { utilization: 50, actualTokens: 10000, projectedTokensAt100: 20000, actualCost: 5.00, projectedCostAt100: 10.00 },
+        models: {
+          opus: { utilization: 0, actualTokens: 0, projectedTokensAt100: null, actualCost: 0, projectedCostAt100: null },
+          sonnet: { utilization: 50, actualTokens: 10000, projectedTokensAt100: 20000, actualCost: 5.00, projectedCostAt100: 10.00 },
+        },
+      },
+      history: [{
+        resets_at: '2026-03-29T00:00:00Z', start: '2026-03-22T00:00:00Z',
+        overall: { utilization: 80, actualTokens: 30000, projectedTokensAt100: 37500, actualCost: 15.00, projectedCostAt100: 18.75 },
+        models: {
+          opus: { utilization: 0, actualTokens: 0, projectedTokensAt100: null, actualCost: 0, projectedCostAt100: null },
+          sonnet: { utilization: 80, actualTokens: 30000, projectedTokensAt100: 37500, actualCost: 15.00, projectedCostAt100: 18.75 },
+        },
+      }],
+    };
+    fs.writeFileSync(path.join(tmpDir, 'quota-cycles-test.json'), JSON.stringify(snapshot));
+
+    apiApp = express();
+    apiApp.use('/api', createApiRouter(logDir, {
+      cacheTtlMs: 500,
+      machineName: 'test',
+      snapshotDir: tmpDir,
+    }));
+    await new Promise((resolve) => {
+      apiServer = apiApp.listen(0, () => { baseUrl = `http://localhost:${apiServer.address().port}`; resolve(); });
+    });
+  });
+
+  after(async () => {
+    await new Promise((resolve) => apiServer.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('returns current cycle and history', async () => {
+    const res = await fetch(`${baseUrl}/api/quota-cycles`);
+    const data = await res.json();
+    expect(res.status).to.equal(200);
+    expect(data.currentCycle).to.be.an('object');
+    expect(data.currentCycle.resets_at).to.equal('2026-04-05T00:00:00Z');
+    expect(data.currentCycle.overall.actualTokens).to.equal(10000);
+    expect(data.history).to.have.length(1);
+    expect(data.machines).to.include('test');
   });
 });
