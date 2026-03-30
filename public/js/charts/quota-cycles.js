@@ -134,8 +134,8 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     <th class="align-right">CW</th>
     <th class="align-right">Total</th>
     <th class="align-right">Excl CR</th>
-    <th class="align-right col-highlight">Proj Tokens</th>
     <th class="align-right">Cost</th>
+    <th class="align-right col-highlight">Proj Tokens</th>
     <th class="align-right col-highlight">Proj Cost</th>
     <th class="align-right">\u0394 Prev</th>
   </tr>`;
@@ -171,8 +171,8 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
       <td class="align-right">${fmt(t.cacheCreation)}</td>
       <td class="align-right">${fmt(totalInclCR)}</td>
       <td class="align-right">${fmt(d.actualTokens)}</td>
-      <td class="align-right col-highlight">${fmt(d.projectedTokensAt100)}</td>
       <td class="align-right">${fmtCost(d.actualCost)}</td>
+      <td class="align-right col-highlight">${fmt(d.projectedTokensAt100)}</td>
       <td class="align-right col-highlight">${fmtCost(d.projectedCostAt100)}</td>
       <td class="align-right ${deltaClass}">${deltaStr}</td>
     `;
