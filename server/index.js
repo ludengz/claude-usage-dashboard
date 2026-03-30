@@ -35,11 +35,19 @@ const server = app.listen(PORT, () => {
   console.log('Press Ctrl+C to stop.');
 });
 
-process.on('SIGINT', () => {
-  console.log('\nShutting down...');
-  server.close(() => process.exit(0));
+// Track connections so we can destroy them on shutdown
+const connections = new Set();
+server.on('connection', (conn) => {
+  connections.add(conn);
+  conn.on('close', () => connections.delete(conn));
 });
 
-process.on('SIGTERM', () => {
+function shutdown() {
+  console.log('\nShutting down...');
+  for (const conn of connections) conn.destroy();
   server.close(() => process.exit(0));
-});
+  setTimeout(() => process.exit(0), 1000).unref();
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
