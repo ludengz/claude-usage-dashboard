@@ -21,24 +21,29 @@ describe('computeCycleData', () => {
     };
     const result = computeCycleData(records, quotaData);
 
-    // Non-cached tokens only: input + output (excludes cache_read and cache_creation)
-    // Overall: 1000+2000+1000=4000 in, 500+800+400=1700 out → 5700
-    expect(result.overall.actualTokens).to.equal(5700);
+    // Token breakdown
+    expect(result.overall.tokens.input).to.equal(4000);
+    expect(result.overall.tokens.output).to.equal(1700);
+    expect(result.overall.tokens.cacheRead).to.equal(600);
+    expect(result.overall.tokens.cacheCreation).to.equal(300);
+
+    // actualTokens = total excl cache reads (in + out + cw) = 4000+1700+300 = 6000
+    expect(result.overall.actualTokens).to.equal(6000);
     expect(result.overall.utilization).to.equal(50);
-    // projectedTokensAt100 = 5700 / (50/100) = 11400
-    expect(result.overall.projectedTokensAt100).to.equal(11400);
+    // projectedTokensAt100 = 6000 / 0.5 = 12000
+    expect(result.overall.projectedTokensAt100).to.equal(12000);
     expect(result.overall.actualCost).to.be.a('number');
     expect(result.overall.projectedCostAt100).to.be.a('number');
 
-    // Opus: 1000+500 = 1500 tokens
-    expect(result.models.opus.actualTokens).to.equal(1500);
+    // Opus: in=1000 out=500 cw=100 → excl CR = 1600
+    expect(result.models.opus.actualTokens).to.equal(1600);
     expect(result.models.opus.utilization).to.equal(30);
-    expect(result.models.opus.projectedTokensAt100).to.equal(5000); // 1500 / 0.3
+    expect(result.models.opus.projectedTokensAt100).to.equal(5333); // 1600 / 0.3
 
-    // Sonnet: 3000+1200 = 4200 tokens
-    expect(result.models.sonnet.actualTokens).to.equal(4200);
+    // Sonnet: in=3000 out=1200 cw=200 → excl CR = 4400
+    expect(result.models.sonnet.actualTokens).to.equal(4400);
     expect(result.models.sonnet.utilization).to.equal(60);
-    expect(result.models.sonnet.projectedTokensAt100).to.equal(7000); // 4200 / 0.6
+    expect(result.models.sonnet.projectedTokensAt100).to.equal(7333); // 4400 / 0.6
   });
 
   it('sets projections to null when utilization is 0', () => {
@@ -63,8 +68,8 @@ describe('computeCycleData', () => {
       seven_day: { utilization: 40, resets_at: '2026-04-05T00:00:00.000Z' },
     };
     const result = computeCycleData(records, quotaData);
-    // Non-cached: 5000 input + 2000 output = 7000
-    expect(result.overall.actualTokens).to.equal(7000);
+    // Haiku: in=5000 out=2000 cw=200 → excl CR = 7200
+    expect(result.overall.actualTokens).to.equal(7200);
     expect(result.models.opus.actualTokens).to.equal(0);
     expect(result.models.sonnet.actualTokens).to.equal(0);
   });
@@ -118,8 +123,8 @@ describe('updateQuotaCycleSnapshot', () => {
     expect(data.schemaVersion).to.equal(1);
     expect(data.machineName).to.equal('test-machine');
     expect(data.currentCycle.resets_at).to.equal('2026-04-05T00:00:00.000Z');
-    // Non-cached: 1000 input + 500 output = 1500
-    expect(data.currentCycle.overall.actualTokens).to.equal(1500);
+    // Excl CR: 1000 input + 500 output + 50 cache_creation = 1550
+    expect(data.currentCycle.overall.actualTokens).to.equal(1550);
     expect(data.history).to.have.length(0);
   });
 

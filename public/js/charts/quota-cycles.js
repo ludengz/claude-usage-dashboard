@@ -14,7 +14,7 @@ const fmtDate = (iso) => {
 
 function getModelData(cycle, modelKey) {
   if (modelKey === 'overall') return cycle.overall;
-  return cycle.models?.[modelKey] || { utilization: 0, actualTokens: 0, projectedTokensAt100: null, actualCost: 0, projectedCostAt100: null };
+  return cycle.models?.[modelKey] || { utilization: 0, actualTokens: 0, projectedTokensAt100: null, actualCost: 0, projectedCostAt100: null, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 } };
 }
 
 const MAX_DISPLAY_CYCLES = 6;
@@ -27,10 +27,12 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     ((data.currentCycle.models?.opus?.utilization > 0) ||
      (data.currentCycle.models?.sonnet?.utilization > 0));
 
-  // --- Model toggle visibility ---
+  // --- Model toggle: grey out when no data ---
   const toggleEl = document.getElementById('cycle-model-toggle');
   if (toggleEl) {
-    toggleEl.style.display = hasModelData ? '' : 'none';
+    toggleEl.querySelectorAll('button[data-cycle-model="opus"], button[data-cycle-model="sonnet"]').forEach(btn => {
+      btn.disabled = !hasModelData;
+    });
   }
 
   // --- Projection Cards ---
@@ -50,7 +52,7 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
         card.innerHTML = `
           <div class="card-label">${item.label}</div>
           <div class="card-value">${fmt(d.projectedTokensAt100)}</div>
-          <div class="card-sub">actual: ${fmt(d.actualTokens)}</div>
+          <div class="card-sub">actual: ${fmt(d.actualTokens)} (excl cache read)</div>
         `;
         cardsEl.appendChild(card);
       }
@@ -91,14 +93,12 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     .attr('height', height + margin.top + margin.bottom)
     .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
 
-  // Cap the chart width used for bars when few cycles, so bars don't stretch full-width
   const maxBarGroupWidth = 120;
   const chartWidth = Math.min(width, chartData.length * (maxBarGroupWidth + 40));
   const x0 = d3.scaleBand().domain(chartData.map(d => d.label)).range([0, chartWidth]).padding(0.3);
   const maxVal = d3.max(chartData, d => Math.max(d.actual, d.projected || 0)) || 1;
   const y = d3.scaleLinear().domain([0, maxVal * 1.1]).range([height, 0]);
 
-  // Axes
   svg.append('g').attr('transform', `translate(0,${height})`)
     .call(d3.axisBottom(x0).tickSize(0))
     .selectAll('text').attr('fill', '#94a3b8').style('font-size', '10px');
@@ -108,7 +108,6 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
 
   const barWidth = Math.min(x0.bandwidth() / 2.5, 40);
 
-  // Projected bars (behind, semi-transparent)
   svg.selectAll('.bar-projected').data(chartData.filter(d => d.projected != null))
     .join('rect').attr('class', 'bar-projected')
     .attr('x', d => x0(d.label) + x0.bandwidth() / 2 - barWidth)
@@ -118,7 +117,6 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     .attr('fill', '#f59e0b').attr('opacity', 0.2)
     .attr('rx', 3);
 
-  // Actual bars (front)
   svg.selectAll('.bar-actual').data(chartData)
     .join('rect').attr('class', 'bar-actual')
     .attr('x', d => x0(d.label) + x0.bandwidth() / 2 - barWidth / 2)
@@ -128,12 +126,11 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     .attr('fill', d => d.isCurrent ? '#3b82f6' : '#60a5fa')
     .attr('rx', 3);
 
-  // Legend
-  const legend = svg.append('g').attr('transform', `translate(${width - 180}, -5)`);
+  const legend = svg.append('g').attr('transform', `translate(${width - 260}, -5)`);
   legend.append('rect').attr('width', 10).attr('height', 10).attr('fill', '#60a5fa').attr('rx', 2);
-  legend.append('text').attr('x', 14).attr('y', 9).text('Actual').attr('fill', '#94a3b8').style('font-size', '10px');
-  legend.append('rect').attr('x', 70).attr('width', 10).attr('height', 10).attr('fill', '#f59e0b').attr('opacity', 0.4).attr('rx', 2);
-  legend.append('text').attr('x', 84).attr('y', 9).text('Projected').attr('fill', '#94a3b8').style('font-size', '10px');
+  legend.append('text').attr('x', 14).attr('y', 9).text('Actual (excl CR)').attr('fill', '#94a3b8').style('font-size', '10px');
+  legend.append('rect').attr('x', 120).attr('width', 10).attr('height', 10).attr('fill', '#f59e0b').attr('opacity', 0.4).attr('rx', 2);
+  legend.append('text').attr('x', 134).attr('y', 9).text('Projected at 100%').attr('fill', '#94a3b8').style('font-size', '10px');
 
   // --- History Table ---
   const tableEl = document.getElementById('quota-cycles-table');
@@ -144,21 +141,27 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
   const thead = document.createElement('thead');
   thead.innerHTML = `<tr>
     <th>Cycle</th>
-    <th class="align-right">Utilization</th>
-    <th class="align-right">Tokens (non-cached)</th>
-    <th class="align-right">Projected at 100%</th>
-    <th class="align-right">Actual Cost</th>
-    <th class="align-right">Projected Cost</th>
-    <th class="align-right">\u0394 vs Prev</th>
+    <th class="align-right">Util%</th>
+    <th class="align-right">In</th>
+    <th class="align-right">Out</th>
+    <th class="align-right">CR</th>
+    <th class="align-right">CW</th>
+    <th class="align-right">Total</th>
+    <th class="align-right">Excl CR</th>
+    <th class="align-right">Proj@100%</th>
+    <th class="align-right">Cost</th>
+    <th class="align-right">Proj Cost</th>
+    <th class="align-right">\u0394 Prev</th>
   </tr>`;
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
-  // Show only recent cycles, newest first
   const displayCycles = [...displayAll].reverse();
   for (let i = 0; i < displayCycles.length; i++) {
     const c = displayCycles[i];
     const d = getModelData(c, modelKey);
+    const t = d.tokens || { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
+    const totalInclCR = t.input + t.output + t.cacheRead + t.cacheCreation;
     const prev = displayCycles[i + 1] ? getModelData(displayCycles[i + 1], modelKey) : null;
 
     let deltaStr = '—';
@@ -176,6 +179,11 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     tr.innerHTML = `
       <td>${label}</td>
       <td class="align-right">${d.utilization.toFixed(1)}%</td>
+      <td class="align-right">${fmt(t.input)}</td>
+      <td class="align-right">${fmt(t.output)}</td>
+      <td class="align-right">${fmt(t.cacheRead)}</td>
+      <td class="align-right">${fmt(t.cacheCreation)}</td>
+      <td class="align-right">${fmt(totalInclCR)}</td>
       <td class="align-right">${fmt(d.actualTokens)}</td>
       <td class="align-right">${fmt(d.projectedTokensAt100)}</td>
       <td class="align-right">${fmtCost(d.actualCost)}</td>

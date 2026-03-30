@@ -16,24 +16,24 @@ export function computeCycleData(records, quotaData) {
   const opusUtil = quotaData.seven_day_opus?.utilization || 0;
   const sonnetUtil = quotaData.seven_day_sonnet?.utilization || 0;
 
-  let totalTokens = 0, totalCost = 0;
-  let opusTokens = 0, opusCost = 0;
-  let sonnetTokens = 0, sonnetCost = 0;
+  // Per-type accumulators
+  let inTok = 0, outTok = 0, crTok = 0, cwTok = 0, totalCost = 0;
+  let opusIn = 0, opusOut = 0, opusCR = 0, opusCW = 0, opusCost = 0;
+  let sonIn = 0, sonOut = 0, sonCR = 0, sonCW = 0, sonnetCost = 0;
 
   for (const r of records) {
-    // Count only non-cached tokens (input + output) — cache reads are high-volume
-    // but near-free, and including them inflates the token metric without reflecting
-    // actual quota consumption
-    const tokens = r.input_tokens + r.output_tokens;
     const cost = calculateRecordCost(r);
-    totalTokens += tokens;
+    inTok += r.input_tokens; outTok += r.output_tokens;
+    crTok += r.cache_read_tokens; cwTok += r.cache_creation_tokens;
     totalCost += cost;
 
     if (r.model?.includes('opus')) {
-      opusTokens += tokens;
+      opusIn += r.input_tokens; opusOut += r.output_tokens;
+      opusCR += r.cache_read_tokens; opusCW += r.cache_creation_tokens;
       opusCost += cost;
     } else if (r.model?.includes('sonnet')) {
-      sonnetTokens += tokens;
+      sonIn += r.input_tokens; sonOut += r.output_tokens;
+      sonCR += r.cache_read_tokens; sonCW += r.cache_creation_tokens;
       sonnetCost += cost;
     }
   }
@@ -41,6 +41,10 @@ export function computeCycleData(records, quotaData) {
   totalCost = Math.round(totalCost * 100) / 100;
   opusCost = Math.round(opusCost * 100) / 100;
   sonnetCost = Math.round(sonnetCost * 100) / 100;
+
+  function buildTokens(inp, out, cr, cw) {
+    return { input: inp, output: out, cacheRead: cr, cacheCreation: cw };
+  }
 
   function project(actual, utilization) {
     if (utilization <= 0) return null;
@@ -52,26 +56,34 @@ export function computeCycleData(records, quotaData) {
     return Math.round((actual / (utilization / 100)) * 100) / 100;
   }
 
+  // actualTokens = total excluding cache reads (in + out + cw) — used for projections
+  const totalExclCR = inTok + outTok + cwTok;
+  const opusExclCR = opusIn + opusOut + opusCW;
+  const sonExclCR = sonIn + sonOut + sonCW;
+
   return {
     overall: {
       utilization: overallUtil,
-      actualTokens: totalTokens,
-      projectedTokensAt100: project(totalTokens, overallUtil),
+      tokens: buildTokens(inTok, outTok, crTok, cwTok),
+      actualTokens: totalExclCR,
+      projectedTokensAt100: project(totalExclCR, overallUtil),
       actualCost: totalCost,
       projectedCostAt100: projectCost(totalCost, overallUtil),
     },
     models: {
       opus: {
         utilization: opusUtil,
-        actualTokens: opusTokens,
-        projectedTokensAt100: project(opusTokens, opusUtil),
+        tokens: buildTokens(opusIn, opusOut, opusCR, opusCW),
+        actualTokens: opusExclCR,
+        projectedTokensAt100: project(opusExclCR, opusUtil),
         actualCost: opusCost,
         projectedCostAt100: projectCost(opusCost, opusUtil),
       },
       sonnet: {
         utilization: sonnetUtil,
-        actualTokens: sonnetTokens,
-        projectedTokensAt100: project(sonnetTokens, sonnetUtil),
+        tokens: buildTokens(sonIn, sonOut, sonCR, sonCW),
+        actualTokens: sonExclCR,
+        projectedTokensAt100: project(sonExclCR, sonnetUtil),
         actualCost: sonnetCost,
         projectedCostAt100: projectCost(sonnetCost, sonnetUtil),
       },
@@ -221,8 +233,20 @@ function mergeMetrics(metricsArray, utilization) {
   const totalTokens = metricsArray.reduce((sum, m) => sum + (m?.actualTokens || 0), 0);
   const totalCost = Math.round(metricsArray.reduce((sum, m) => sum + (m?.actualCost || 0), 0) * 100) / 100;
 
+  // Merge per-type token breakdown
+  const tokens = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
+  for (const m of metricsArray) {
+    if (m?.tokens) {
+      tokens.input += m.tokens.input || 0;
+      tokens.output += m.tokens.output || 0;
+      tokens.cacheRead += m.tokens.cacheRead || 0;
+      tokens.cacheCreation += m.tokens.cacheCreation || 0;
+    }
+  }
+
   return {
     utilization,
+    tokens,
     actualTokens: totalTokens,
     projectedTokensAt100: utilization > 0 ? Math.round(totalTokens / (utilization / 100)) : null,
     actualCost: totalCost,
