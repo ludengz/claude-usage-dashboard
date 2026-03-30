@@ -125,7 +125,8 @@ export function createApiRouter(logBaseDir, options = {}) {
             data,
             logBaseDir,
             options.machineName || os.hostname(),
-            options.snapshotDir
+            options.snapshotDir,
+            options.syncDir
           );
         } catch (err) {
           console.warn('Failed to update quota cycle snapshot:', err.message);

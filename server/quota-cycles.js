@@ -83,12 +83,13 @@ export function computeCycleData(records, quotaData) {
  * @param {object} quotaData - Quota API response (must have available === true)
  * @param {string} logBaseDir - This machine's log directory (~/.claude/projects/)
  * @param {string} machineName - Identifier for this machine
- * @param {string} [snapshotDir] - Directory for snapshot files (defaults to ~/.claude/)
+ * @param {string} [snapshotDir] - Directory for snapshot files (defaults to syncDir or ~/.claude/)
+ * @param {string} [syncDir] - Shared sync directory; used as fallback when snapshotDir is not set
  */
-export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, snapshotDir) {
+export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, snapshotDir, syncDir) {
   if (!quotaData?.available || !quotaData.seven_day?.resets_at) return;
 
-  const dir = snapshotDir || path.join(os.homedir(), '.claude');
+  const dir = snapshotDir || syncDir || path.join(os.homedir(), '.claude');
   const filePath = path.join(dir, `quota-cycles-${machineName}.json`);
 
   const resetsAt = quotaData.seven_day.resets_at;
