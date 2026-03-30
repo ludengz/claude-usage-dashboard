@@ -14,3 +14,4 @@ export async function fetchCache(params = {}) { return (await fetch(`${BASE}/cac
 export async function fetchStatus() { return (await fetch(`${BASE}/status`)).json(); }
 export async function fetchQuota() { return (await fetch(`${BASE}/quota`)).json(); }
 export async function fetchSubscription() { return (await fetch(`${BASE}/subscription`)).json(); }
+export async function fetchQuotaCycles() { return (await fetch(`${BASE}/quota-cycles`)).json(); }

@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import os from 'os';
 import { parseLogDirectory, parseMultiMachineDirectory } from '../parser.js';
 import { syncLocalToShared } from '../sync.js';
 import { filterByDateRange, autoGranularity, aggregateByTime, aggregateBySession, aggregateByProject, aggregateByModel, aggregateCache } from '../aggregator.js';
 import { calculateRecordCost, PLAN_DEFAULTS } from '../pricing.js';
 import { createQuotaFetcher } from '../quota.js';
 import { getSubscriptionInfo } from '../credentials.js';
+import { updateQuotaCycleSnapshot, loadQuotaCycles } from '../quota-cycles.js';
 
 export function createApiRouter(logBaseDir, options = {}) {
   const router = Router();
@@ -117,9 +119,41 @@ export function createApiRouter(logBaseDir, options = {}) {
   router.get('/quota', async (req, res) => {
     try {
       const data = await quotaFetcher.fetchQuota();
+      if (data.available) {
+        try {
+          updateQuotaCycleSnapshot(
+            data,
+            logBaseDir,
+            options.machineName || os.hostname(),
+            options.snapshotDir,
+            options.syncDir
+          );
+        } catch (err) {
+          console.warn('Failed to update quota cycle snapshot:', err.message);
+        }
+      }
       res.json(data);
     } catch (err) {
       res.json({ available: false, error: err.message });
+    }
+  });
+
+  router.get('/quota-cycles', (req, res) => {
+    try {
+      const data = loadQuotaCycles(
+        options.machineName || os.hostname(),
+        options.syncDir || null,
+        options.snapshotDir
+      );
+      if (data.currentCycle) {
+        const start = new Date(data.currentCycle.start);
+        const now = new Date();
+        data.currentCycle.daysElapsed = Math.round(((now - start) / (1000 * 60 * 60 * 24)) * 10) / 10;
+        data.currentCycle.daysTotal = 7;
+      }
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
   });
 

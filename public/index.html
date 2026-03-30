@@ -50,6 +50,21 @@
     <div id="chart-quota" class="chart-container"></div>
   </section>
 
+  <section class="chart-section" id="quota-cycles-section">
+    <div class="chart-header">
+      <h2>Quota Cycle History <span id="cycle-projection-summary" class="cycle-summary"></span></h2>
+      <div class="granularity-toggle" id="cycle-model-toggle">
+        <button data-cycle-model="overall" class="active">Overall</button>
+        <button data-cycle-model="opus">Opus</button>
+        <button data-cycle-model="sonnet">Sonnet</button>
+      </div>
+    </div>
+    <div class="quota-cycles-layout">
+      <div id="chart-quota-cycles" class="quota-cycles-chart"></div>
+      <div id="quota-cycles-table" class="table-container quota-cycles-table-wrap"></div>
+    </div>
+  </section>
+
   <section class="chart-section">
     <div class="chart-header">
       <h2>Token Consumption Trend</h2>

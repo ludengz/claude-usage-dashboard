@@ -1,4 +1,4 @@
-import { fetchUsage, fetchModels, fetchProjects, fetchSessions, fetchCost, fetchCache, fetchStatus, fetchQuota, fetchSubscription } from './api.js';
+import { fetchUsage, fetchModels, fetchProjects, fetchSessions, fetchCost, fetchCache, fetchStatus, fetchQuota, fetchSubscription, fetchQuotaCycles } from './api.js';
 import { initDatePicker } from './components/date-picker.js';
 import { initPlanSelector } from './components/plan-selector.js';
 import { renderTokenTrend } from './charts/token-trend.js';
@@ -8,6 +8,7 @@ import { renderCacheEfficiency } from './charts/cache-efficiency.js';
 import { renderProjectDistribution } from './charts/project-distribution.js';
 import { renderSessionTable } from './charts/session-stats.js';
 import { renderQuotaGauges } from './charts/quota-gauge.js';
+import { renderQuotaCycles } from './charts/quota-cycles.js';
 
 const state = {
   dateRange: { from: null, to: null },
@@ -19,6 +20,7 @@ const state = {
   sessionPage: 1,
   sessionProject: '',
   autoRefresh: localStorage.getItem('autoRefresh') !== 'false',
+  cycleModel: 'overall',
   autoRefreshInterval: 30,
   _refreshTimer: null,
   quotaRefreshInterval: 120,
@@ -83,6 +85,16 @@ async function loadQuota() {
     });
     const el = document.getElementById('quota-last-updated');
     if (el && data.lastFetched) el.textContent = `Updated ${new Date(data.lastFetched).toLocaleTimeString()} ${getTimezoneAbbr()}`;
+    loadQuotaCyclesData();
+  } catch { /* silently degrade */ }
+}
+
+async function loadQuotaCyclesData() {
+  try {
+    const data = await fetchQuotaCycles();
+    renderQuotaCycles(document.getElementById('chart-quota-cycles'), data, {
+      modelKey: state.cycleModel,
+    });
   } catch { /* silently degrade */ }
 }
 
@@ -270,6 +282,16 @@ function init() {
       startAutoRefresh();
     } else {
       stopAutoRefresh();
+    }
+  });
+
+  document.getElementById('cycle-model-toggle').addEventListener('click', (e) => {
+    if (e.target.tagName === 'BUTTON') {
+      state.cycleModel = e.target.dataset.cycleModel;
+      document.querySelectorAll('#cycle-model-toggle button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.cycleModel === state.cycleModel);
+      });
+      loadQuotaCyclesData();
     }
   });
 
