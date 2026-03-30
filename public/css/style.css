@@ -259,7 +259,28 @@ body {
 }
 #quota-section .chart-container { min-height: auto; }
 
+.cycle-projection-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.cycle-projection-cards .card {
+  text-align: center;
+}
+.cycle-projection-cards .card-value {
+  color: var(--amber);
+}
+.cycle-projection-cards .card-sub {
+  color: var(--text-muted);
+}
+.delta-positive { color: var(--green); }
+.delta-negative { color: var(--red); }
+
+#quota-cycles-section .chart-container { min-height: 250px; }
+
 @media (max-width: 768px) {
   .summary-cards { grid-template-columns: repeat(2, 1fr); }
   .chart-row-3 { grid-template-columns: 1fr; }
+  .cycle-projection-cards { grid-template-columns: 1fr; }
 }
