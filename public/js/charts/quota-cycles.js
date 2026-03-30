@@ -17,7 +17,7 @@ function getModelData(cycle, modelKey) {
   return cycle.models?.[modelKey] || { utilization: 0, actualTokens: 0, projectedTokensAt100: null, actualCost: 0, projectedCostAt100: null, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 } };
 }
 
-const MAX_DISPLAY_CYCLES = 6;
+const MAX_DISPLAY_CYCLES = 10;
 
 export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}) {
   if (!container) return;
@@ -134,7 +134,7 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     <th class="align-right">CW</th>
     <th class="align-right">Total</th>
     <th class="align-right">Excl CR</th>
-    <th class="align-right">Proj@100%</th>
+    <th class="align-right col-highlight">Proj@100%</th>
     <th class="align-right">Cost</th>
     <th class="align-right">Proj Cost</th>
     <th class="align-right">\u0394 Prev</th>
@@ -171,7 +171,7 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
       <td class="align-right">${fmt(t.cacheCreation)}</td>
       <td class="align-right">${fmt(totalInclCR)}</td>
       <td class="align-right">${fmt(d.actualTokens)}</td>
-      <td class="align-right">${fmt(d.projectedTokensAt100)}</td>
+      <td class="align-right col-highlight">${fmt(d.projectedTokensAt100)}</td>
       <td class="align-right">${fmtCost(d.actualCost)}</td>
       <td class="align-right">${fmtCost(d.projectedCostAt100)}</td>
       <td class="align-right ${deltaClass}">${deltaStr}</td>
