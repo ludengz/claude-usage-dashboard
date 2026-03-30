@@ -100,6 +100,20 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     .attr('fill', '#f59e0b').attr('opacity', 0.2)
     .attr('rx', 2);
 
+  // Tooltip
+  const tooltip = d3.select(container).append('div')
+    .attr('class', 'd3-tooltip')
+    .style('opacity', 0);
+
+  function showTip(event, d) {
+    const proj = d.projected != null ? fmt(d.projected) : '—';
+    tooltip.html(`<strong>${d.label}</strong><br>Actual: ${fmt(d.actual)}<br>Proj@100%: ${proj}`)
+      .style('opacity', 1)
+      .style('left', (event.offsetX + 12) + 'px')
+      .style('top', (event.offsetY - 10) + 'px');
+  }
+  function hideTip() { tooltip.style('opacity', 0); }
+
   // Actual bars (front)
   svg.selectAll('.bar-actual').data(chartData)
     .join('rect').attr('class', 'bar-actual')
@@ -109,6 +123,18 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     .attr('height', barH)
     .attr('fill', d => d.isCurrent ? '#3b82f6' : '#60a5fa')
     .attr('rx', 2);
+
+  // Hover areas (full row for easy targeting)
+  svg.selectAll('.bar-hover').data(chartData)
+    .join('rect').attr('class', 'bar-hover')
+    .attr('x', 0)
+    .attr('width', width)
+    .attr('y', d => y0(d.label))
+    .attr('height', y0.bandwidth())
+    .attr('fill', 'transparent')
+    .style('cursor', 'pointer')
+    .on('mousemove', showTip)
+    .on('mouseleave', hideTip);
 
   // Compact legend
   const legend = svg.append('g').attr('transform', `translate(0, -8)`);
