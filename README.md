@@ -3,9 +3,9 @@
 [![npm version](https://img.shields.io/npm/v/claude-usage-dashboard)](https://www.npmjs.com/package/claude-usage-dashboard)
 [![npm downloads](https://img.shields.io/npm/dm/claude-usage-dashboard)](https://www.npmjs.com/package/claude-usage-dashboard)
 
-> Find out what your Claude Code subscription is actually worth in API costs — across every machine you own.
+> Find out what your Claude Code subscription is actually worth in API costs — and whether your quota is shrinking — across every machine you own.
 
-Your $200/month Max plan might be consuming **$15,000+/month** in API-equivalent value. This dashboard shows you exactly how much — per project, per session, per model, and across all your machines in one unified view. One command to start. Completely local.
+Your $200/month Max plan might be consuming **$15,000+/month** in API-equivalent value. This dashboard shows you exactly how much — per project, per session, per model, and across all your machines in one unified view. It also tracks your 7-day quota cycles, projects token usage at full utilization, and keeps history so you can spot if your effective quota quietly changed. One command to start. Completely local.
 
 ```bash
 npx claude-usage-dashboard
@@ -29,6 +29,14 @@ Real-time projected API cost at your current usage rate — weekly and monthly. 
 
 Live utilization gauges for 5-hour, 7-day, and per-model quotas pulled directly from the Anthropic API. Auto-detects your plan tier (Pro / Max 5x / Max 20x). Never get throttled by surprise again.
 
+### Track Your Quota Across Cycles
+
+Anthropic doesn't publish exact token limits, and those limits can change without notice. The Quota Cycle History section gives you a running record of each 7-day cycle so you can see exactly how much you got and whether it stayed consistent.
+
+For each cycle, the dashboard projects what your full token quota would be at 100% utilization — broken down by Input, Output, Cache Read, Cache Write, and Total. A horizontal bar chart overlays actual vs. projected per cycle, and the history table highlights projected tokens and cost with a delta column showing the change versus the previous cycle.
+
+That delta is the key signal: if your projected quota drops from one cycle to the next without you changing how you work, something changed on the platform side. Track your actual consumption week-over-week so you have real numbers when something feels off — not just a gut feeling. Up to 10 past cycles are retained across all your machines.
+
 ### Find What's Eating Your Tokens
 
 Per-project and per-session cost breakdowns show exactly where your usage goes. Sortable session table with cost, duration, and full token breakdown. Spot the expensive sessions instantly.
@@ -39,7 +47,7 @@ You'll probably discover that ~95% of your tokens are cache reads at 1/10th the 
 
 ### Everything Else
 
-**Multi-machine sync** — aggregate usage across all your devices via a shared folder · Hourly/daily/weekly/monthly token trends · Dollar and token toggle · Model distribution across Opus/Sonnet/Haiku · Active hours heatmap · Auto-refresh (30s) · Persistent filters via localStorage · Dark theme
+**Multi-machine sync** — aggregate usage across all your devices via a shared folder · **Quota cycle tracking** — monitors each 7-day reset window, projects usage at 100% utilization, logs history to detect quota changes · Hourly/daily/weekly/monthly token trends · Dollar and token toggle · Model distribution across Opus/Sonnet/Haiku · Active hours heatmap · Auto-refresh (30s) · Persistent filters via localStorage · Dark theme
 
 ## Quick Start
 
