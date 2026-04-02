@@ -54,6 +54,41 @@ export async function syncLocalToShared(localDir, syncDir, machineName) {
       } catch (err) {
         console.warn(`Sync warning: failed to sync ${file}: ${err.message}`);
       }
+
+      // Also sync subagent transcript files for this session
+      const sessionDirName = file.replace(/\.jsonl$/, '');
+      const localSubagentsPath = path.join(localProjPath, sessionDirName, 'subagents');
+      let subagentFiles;
+      try {
+        subagentFiles = (await fs.readdir(localSubagentsPath)).filter(f => f.endsWith('.jsonl'));
+      } catch {
+        continue;
+      }
+
+      for (const subFile of subagentFiles) {
+        const localSubFile = path.join(localSubagentsPath, subFile);
+        const sharedSubFile = path.join(machineDir, dir.name, sessionDirName, 'subagents', subFile);
+
+        try {
+          const localStat = await fs.stat(localSubFile);
+          let needsSync = false;
+
+          try {
+            const sharedStat = await fs.stat(sharedSubFile);
+            needsSync = localStat.size > sharedStat.size;
+          } catch {
+            needsSync = true;
+          }
+
+          if (needsSync) {
+            await fs.mkdir(path.join(machineDir, dir.name, sessionDirName, 'subagents'), { recursive: true });
+            await fs.copyFile(localSubFile, sharedSubFile);
+            syncedFiles++;
+          }
+        } catch (err) {
+          console.warn(`Sync warning: failed to sync subagent ${subFile}: ${err.message}`);
+        }
+      }
     }
   }
 

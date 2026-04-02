@@ -108,6 +108,110 @@ describe('parseLogDirectory', () => {
   });
 });
 
+describe('parseLogDirectory - subagent support', () => {
+  let tmpDir;
+
+  before(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'parser-subagent-test-'));
+    const projectDir = path.join(tmpDir, '-Users-test-Workspace-myproject');
+    fs.mkdirSync(projectDir);
+
+    // Main session JSONL
+    const sessionId = 'abc12345-6789-0def-abcd-ef0123456789';
+    fs.writeFileSync(path.join(projectDir, `${sessionId}.jsonl`), JSON.stringify({
+      type: 'assistant',
+      sessionId,
+      timestamp: '2026-04-01T23:00:00.000Z',
+      message: {
+        model: 'claude-opus-4-6',
+        usage: { input_tokens: 3000, output_tokens: 24000, cache_creation_input_tokens: 200000, cache_read_input_tokens: 5000000 }
+      }
+    }));
+
+    // Subagent transcript directory
+    const subagentsDir = path.join(projectDir, sessionId, 'subagents');
+    fs.mkdirSync(subagentsDir, { recursive: true });
+
+    // Subagent 1
+    fs.writeFileSync(path.join(subagentsDir, 'agent-a111.jsonl'), [
+      JSON.stringify({
+        type: 'assistant',
+        sessionId: 'sub-agent-session-1',
+        timestamp: '2026-04-01T23:05:00.000Z',
+        message: {
+          model: 'claude-opus-4-6',
+          usage: { input_tokens: 500, output_tokens: 10000, cache_creation_input_tokens: 50000, cache_read_input_tokens: 300000 }
+        }
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        sessionId: 'sub-agent-session-1',
+        timestamp: '2026-04-01T23:06:00.000Z',
+        message: {
+          model: 'claude-opus-4-6',
+          usage: { input_tokens: 600, output_tokens: 12000, cache_creation_input_tokens: 60000, cache_read_input_tokens: 400000 }
+        }
+      })
+    ].join('\n'));
+
+    // Subagent 2
+    fs.writeFileSync(path.join(subagentsDir, 'agent-b222.jsonl'), JSON.stringify({
+      type: 'assistant',
+      sessionId: 'sub-agent-session-2',
+      timestamp: '2026-04-01T23:10:00.000Z',
+      message: {
+        model: 'claude-opus-4-6',
+        usage: { input_tokens: 400, output_tokens: 8000, cache_creation_input_tokens: 40000, cache_read_input_tokens: 200000 }
+      }
+    }));
+
+    // Non-JSONL file (should be ignored)
+    fs.writeFileSync(path.join(subagentsDir, 'agent-a111.meta.json'), '{"some":"meta"}');
+  });
+
+  after(() => {
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('includes subagent token usage in session records', () => {
+    const records = parseLogDirectory(tmpDir);
+    // 1 main + 2 from agent-a111 + 1 from agent-b222 = 4
+    expect(records).to.have.length(4);
+  });
+
+  it('groups subagent records under the parent session ID', () => {
+    const records = parseLogDirectory(tmpDir);
+    const sessionIds = [...new Set(records.map(r => r.sessionId))];
+    expect(sessionIds).to.have.length(1);
+    expect(sessionIds[0]).to.equal('abc12345-6789-0def-abcd-ef0123456789');
+  });
+
+  it('aggregates correct total tokens across main + subagents', () => {
+    const records = parseLogDirectory(tmpDir);
+    const totalInput = records.reduce((sum, r) => sum + r.input_tokens, 0);
+    const totalOutput = records.reduce((sum, r) => sum + r.output_tokens, 0);
+    const totalCacheCreation = records.reduce((sum, r) => sum + r.cache_creation_tokens, 0);
+    const totalCacheRead = records.reduce((sum, r) => sum + r.cache_read_tokens, 0);
+    expect(totalInput).to.equal(3000 + 500 + 600 + 400);
+    expect(totalOutput).to.equal(24000 + 10000 + 12000 + 8000);
+    expect(totalCacheCreation).to.equal(200000 + 50000 + 60000 + 40000);
+    expect(totalCacheRead).to.equal(5000000 + 300000 + 400000 + 200000);
+  });
+
+  it('assigns correct project name to subagent records', () => {
+    const records = parseLogDirectory(tmpDir);
+    for (const record of records) {
+      expect(record.project).to.equal('myproject');
+    }
+  });
+
+  it('skips non-JSONL files in subagents directory', () => {
+    const records = parseLogDirectory(tmpDir);
+    // .meta.json should not produce any records
+    expect(records).to.have.length(4);
+  });
+});
+
 describe('parseMultiMachineDirectory', () => {
   let tmpDir;
 

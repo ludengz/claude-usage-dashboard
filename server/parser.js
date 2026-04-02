@@ -102,6 +102,28 @@ export function parseLogDirectory(baseDir) {
         record.projectDirName = dir.name;
       }
       allRecords.push(...records);
+
+      // Also parse subagent transcript files for this session
+      const sessionDirName = file.replace(/\.jsonl$/, '');
+      const subagentsPath = path.join(projectPath, sessionDirName, 'subagents');
+      let subagentFiles;
+      try {
+        subagentFiles = fs.readdirSync(subagentsPath)
+          .filter(f => f.endsWith('.jsonl'));
+      } catch {
+        continue;
+      }
+
+      for (const subFile of subagentFiles) {
+        const subFilePath = path.join(subagentsPath, subFile);
+        const subRecords = parseLogFile(subFilePath);
+        for (const record of subRecords) {
+          record.project = projectName;
+          record.projectDirName = dir.name;
+          record.sessionId = sessionDirName; // Group with parent session
+        }
+        allRecords.push(...subRecords);
+      }
     }
   }
 
