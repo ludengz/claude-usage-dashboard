@@ -74,9 +74,13 @@ async function loadQuota() {
     if (window && sevenDay.utilization > 0) {
       quotaWindowFrom = window.from;
       quotaWindowTo = window.to;
+      // Use local date-only format (YYYY-MM-DD) to match the date picker's
+      // filtering — filterByDateRange treats date-only strings as local
+      // midnight boundaries, ensuring consistent results across all views.
+      const fmtD = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
       const cost7d = await fetchCost({
-        from: window.from.toISOString(),
-        to: window.to.toISOString(),
+        from: fmtD(window.from),
+        to: fmtD(window.to),
         plan: state.plan.plan,
       });
       cost7dValue = cost7d.api_equivalent_cost_usd;

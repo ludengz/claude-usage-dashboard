@@ -149,9 +149,16 @@ export function createApiRouter(logBaseDir, options = {}) {
         // Recompute current cycle from parsed records — in sync mode this
         // includes all machines' data, matching /api/cost and /api/usage.
         // The snapshot's utilization % (from the quota API) is preserved.
+        // Convert UTC cycle dates to local date-only strings (YYYY-MM-DD) so
+        // filterByDateRange uses local midnight boundaries, matching the date
+        // picker's range that drives the summary cards and /api/cost.
+        const toLocalDate = (iso) => {
+          const d = new Date(iso);
+          return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        };
         const records = refreshRecords();
         const cycleRecords = filterByDateRange(
-          records, data.currentCycle.start, data.currentCycle.resets_at
+          records, toLocalDate(data.currentCycle.start), toLocalDate(data.currentCycle.resets_at)
         );
         const quotaShim = {
           seven_day: { utilization: data.currentCycle.overall.utilization },
