@@ -30,6 +30,32 @@ const state = {
 let datePicker, planSelector;
 let _cachedCycleData = null;
 
+/**
+ * Find a quota cycle whose period matches the selected date range.
+ * Returns the cycle's overall metrics, or null if no match.
+ * Tolerance: 25 hours (handles hour-level normalization and timezone offsets).
+ */
+function findMatchingCycle(dateRange, cycleData) {
+  if (!dateRange.from || !dateRange.to || !cycleData) return null;
+  const viewFrom = new Date(dateRange.from).getTime();
+  const viewTo = new Date(dateRange.to).getTime();
+  const tolerance = 25 * 60 * 60 * 1000;
+
+  const candidates = [];
+  if (cycleData.currentCycle) candidates.push(cycleData.currentCycle);
+  if (cycleData.history) candidates.push(...cycleData.history);
+
+  for (const c of candidates) {
+    if (!c.start || !c.resets_at || !c.overall?.tokens) continue;
+    const cStart = new Date(c.start).getTime();
+    const cEnd = new Date(c.resets_at).getTime();
+    if (Math.abs(viewFrom - cStart) < tolerance && Math.abs(viewTo - cEnd) < tolerance) {
+      return c.overall;
+    }
+  }
+  return null;
+}
+
 function formatNumber(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
@@ -144,21 +170,16 @@ async function loadAll() {
     fetchCache(params),
   ]);
 
-  // Summary cards — use multi-machine cycle data when viewing current cycle
+  // Summary cards — use multi-machine cycle data when date range matches a cycle
   const t = usage.total;
   let tokIn = t.input_tokens, tokOut = t.output_tokens;
   let tokCR = t.cache_read_tokens, tokCW = t.cache_creation_tokens;
   let apiCost = cost.api_equivalent_cost_usd;
-  const cc = _cachedCycleData?.currentCycle?.overall;
-  if (cc?.tokens) {
-    const cct = cc.tokens;
-    const mergedAll = cct.input + cct.output + cct.cacheRead + cct.cacheCreation;
-    const localAll = tokIn + tokOut + tokCR + tokCW;
-    if (mergedAll > localAll) {
-      tokIn = cct.input; tokOut = cct.output;
-      tokCR = cct.cacheRead; tokCW = cct.cacheCreation;
-      apiCost = cc.actualCost;
-    }
+  const matchedCycle = findMatchingCycle(state.dateRange, _cachedCycleData);
+  if (matchedCycle?.tokens) {
+    tokIn = matchedCycle.tokens.input; tokOut = matchedCycle.tokens.output;
+    tokCR = matchedCycle.tokens.cacheRead; tokCW = matchedCycle.tokens.cacheCreation;
+    apiCost = matchedCycle.actualCost;
   }
   const totalAll = tokIn + tokOut + tokCR + tokCW;
   document.getElementById('val-total-tokens').textContent = formatNumber(totalAll);
