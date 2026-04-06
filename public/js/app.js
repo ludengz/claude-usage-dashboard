@@ -30,32 +30,6 @@ const state = {
 let datePicker, planSelector;
 let _cachedCycleData = null;
 
-/**
- * Find a quota cycle whose period matches the selected date range.
- * Returns the cycle's overall metrics, or null if no match.
- * Tolerance: 25 hours (handles hour-level normalization and timezone offsets).
- */
-function findMatchingCycle(dateRange, cycleData) {
-  if (!dateRange.from || !dateRange.to || !cycleData) return null;
-  const viewFrom = new Date(dateRange.from).getTime();
-  const viewTo = new Date(dateRange.to).getTime();
-  const tolerance = 25 * 60 * 60 * 1000;
-
-  const candidates = [];
-  if (cycleData.currentCycle) candidates.push(cycleData.currentCycle);
-  if (cycleData.history) candidates.push(...cycleData.history);
-
-  for (const c of candidates) {
-    if (!c.start || !c.resets_at || !c.overall?.tokens) continue;
-    const cStart = new Date(c.start).getTime();
-    const cEnd = new Date(c.resets_at).getTime();
-    if (Math.abs(viewFrom - cStart) < tolerance && Math.abs(viewTo - cEnd) < tolerance) {
-      return c.overall;
-    }
-  }
-  return null;
-}
-
 function formatNumber(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
@@ -100,16 +74,12 @@ async function loadQuota() {
     if (window && sevenDay.utilization > 0) {
       quotaWindowFrom = window.from;
       quotaWindowTo = window.to;
-      // Prefer cycle data (multi-machine merged) over cost API (local only)
-      cost7dValue = cycleData?.currentCycle?.overall?.actualCost || 0;
-      if (cost7dValue === 0) {
-        const cost7d = await fetchCost({
-          from: window.from.toISOString(),
-          to: window.to.toISOString(),
-          plan: state.plan.plan,
-        });
-        cost7dValue = cost7d.api_equivalent_cost_usd;
-      }
+      const cost7d = await fetchCost({
+        from: window.from.toISOString(),
+        to: window.to.toISOString(),
+        plan: state.plan.plan,
+      });
+      cost7dValue = cost7d.api_equivalent_cost_usd;
     }
 
     renderQuotaGauges(document.getElementById('chart-quota'), data, {
@@ -170,30 +140,18 @@ async function loadAll() {
     fetchCache(params),
   ]);
 
-  // Summary cards — use multi-machine cycle data when date range matches a cycle
+  // Summary cards
   const t = usage.total;
-  let tokIn = t.input_tokens, tokOut = t.output_tokens;
-  let tokCR = t.cache_read_tokens, tokCW = t.cache_creation_tokens;
-  let apiCost = cost.api_equivalent_cost_usd;
-  const matchedCycle = findMatchingCycle(state.dateRange, _cachedCycleData);
-  if (matchedCycle?.tokens) {
-    tokIn = matchedCycle.tokens.input; tokOut = matchedCycle.tokens.output;
-    tokCR = matchedCycle.tokens.cacheRead; tokCW = matchedCycle.tokens.cacheCreation;
-    apiCost = matchedCycle.actualCost;
-  }
-  const totalAll = tokIn + tokOut + tokCR + tokCW;
+  const totalAll = t.input_tokens + t.output_tokens + t.cache_read_tokens + t.cache_creation_tokens;
   document.getElementById('val-total-tokens').textContent = formatNumber(totalAll);
   document.getElementById('sub-total-tokens').innerHTML =
-    `<span style="color:#4ade80">cache read:${formatNumber(tokCR)}</span> · ` +
-    `<span style="color:#f59e0b">cache write:${formatNumber(tokCW)}</span> · ` +
-    `<span style="color:#60a5fa">in:${formatNumber(tokIn)}</span> · ` +
-    `<span style="color:#f97316">out:${formatNumber(tokOut)}</span>`;
-  document.getElementById('val-api-cost').textContent = `$${apiCost.toFixed(2)}`;
+    `<span style="color:#4ade80">cache read:${formatNumber(t.cache_read_tokens)}</span> · ` +
+    `<span style="color:#f59e0b">cache write:${formatNumber(t.cache_creation_tokens)}</span> · ` +
+    `<span style="color:#60a5fa">in:${formatNumber(t.input_tokens)}</span> · ` +
+    `<span style="color:#f97316">out:${formatNumber(t.output_tokens)}</span>`;
+  document.getElementById('val-api-cost').textContent = `$${cost.api_equivalent_cost_usd.toFixed(2)}`;
 
-  const totalInput = tokIn + tokCR + tokCW;
-  document.getElementById('val-cache-rate').textContent = totalInput > 0
-    ? `${((tokCR / totalInput) * 100).toFixed(1)}%`
-    : `${(cache.cache_read_rate * 100).toFixed(1)}%`;
+  document.getElementById('val-cache-rate').textContent = `${(cache.cache_read_rate * 100).toFixed(1)}%`;
 
   // Set active granularity button
   const activeGran = usage.granularity;

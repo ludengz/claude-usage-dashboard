@@ -174,6 +174,11 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
     ...cycleData,
   };
 
+  // Remove stale history entries for the current cycle's period — these are
+  // artifacts from past false cycle-switch detections on this same machine.
+  const currentKey = cyclePeriodKey(snapshot.currentCycle);
+  snapshot.history = snapshot.history.filter(h => cyclePeriodKey(h) !== currentKey);
+
   fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2));
 }
 
