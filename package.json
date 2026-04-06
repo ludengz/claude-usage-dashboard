@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-dashboard",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "description": "Claude Code usage dashboard — token costs, quota cycle tracking, cache efficiency, multi-machine sync across all your devices",
   "main": "server/index.js",
   "bin": {

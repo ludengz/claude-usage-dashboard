@@ -144,18 +144,35 @@ async function loadAll() {
     fetchCache(params),
   ]);
 
-  // Summary cards
+  // Summary cards — use multi-machine cycle data when viewing current cycle
   const t = usage.total;
-  const totalAll = t.input_tokens + t.output_tokens + t.cache_read_tokens + t.cache_creation_tokens;
+  let tokIn = t.input_tokens, tokOut = t.output_tokens;
+  let tokCR = t.cache_read_tokens, tokCW = t.cache_creation_tokens;
+  let apiCost = cost.api_equivalent_cost_usd;
+  const cc = _cachedCycleData?.currentCycle?.overall;
+  if (cc?.tokens) {
+    const cct = cc.tokens;
+    const mergedAll = cct.input + cct.output + cct.cacheRead + cct.cacheCreation;
+    const localAll = tokIn + tokOut + tokCR + tokCW;
+    if (mergedAll > localAll) {
+      tokIn = cct.input; tokOut = cct.output;
+      tokCR = cct.cacheRead; tokCW = cct.cacheCreation;
+      apiCost = cc.actualCost;
+    }
+  }
+  const totalAll = tokIn + tokOut + tokCR + tokCW;
   document.getElementById('val-total-tokens').textContent = formatNumber(totalAll);
   document.getElementById('sub-total-tokens').innerHTML =
-    `<span style="color:#4ade80">cache read:${formatNumber(t.cache_read_tokens)}</span> · ` +
-    `<span style="color:#f59e0b">cache write:${formatNumber(t.cache_creation_tokens)}</span> · ` +
-    `<span style="color:#60a5fa">in:${formatNumber(t.input_tokens)}</span> · ` +
-    `<span style="color:#f97316">out:${formatNumber(t.output_tokens)}</span>`;
-  document.getElementById('val-api-cost').textContent = `$${cost.api_equivalent_cost_usd.toFixed(2)}`;
+    `<span style="color:#4ade80">cache read:${formatNumber(tokCR)}</span> · ` +
+    `<span style="color:#f59e0b">cache write:${formatNumber(tokCW)}</span> · ` +
+    `<span style="color:#60a5fa">in:${formatNumber(tokIn)}</span> · ` +
+    `<span style="color:#f97316">out:${formatNumber(tokOut)}</span>`;
+  document.getElementById('val-api-cost').textContent = `$${apiCost.toFixed(2)}`;
 
-  document.getElementById('val-cache-rate').textContent = `${(cache.cache_read_rate * 100).toFixed(1)}%`;
+  const totalInput = tokIn + tokCR + tokCW;
+  document.getElementById('val-cache-rate').textContent = totalInput > 0
+    ? `${((tokCR / totalInput) * 100).toFixed(1)}%`
+    : `${(cache.cache_read_rate * 100).toFixed(1)}%`;
 
   // Set active granularity button
   const activeGran = usage.granularity;
