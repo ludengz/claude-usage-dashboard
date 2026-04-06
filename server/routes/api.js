@@ -6,7 +6,7 @@ import { filterByDateRange, autoGranularity, aggregateByTime, aggregateBySession
 import { calculateRecordCost, PLAN_DEFAULTS } from '../pricing.js';
 import { createQuotaFetcher } from '../quota.js';
 import { getSubscriptionInfo } from '../credentials.js';
-import { updateQuotaCycleSnapshot, loadQuotaCycles } from '../quota-cycles.js';
+import { updateQuotaCycleSnapshot, loadQuotaCycles, computeCycleData } from '../quota-cycles.js';
 
 export function createApiRouter(logBaseDir, options = {}) {
   const router = Router();
@@ -146,6 +146,21 @@ export function createApiRouter(logBaseDir, options = {}) {
         options.snapshotDir
       );
       if (data.currentCycle) {
+        // Recompute current cycle from parsed records — in sync mode this
+        // includes all machines' data, matching /api/cost and /api/usage.
+        // The snapshot's utilization % (from the quota API) is preserved.
+        const records = refreshRecords();
+        const cycleRecords = filterByDateRange(
+          records, data.currentCycle.start, data.currentCycle.resets_at
+        );
+        const quotaShim = {
+          seven_day: { utilization: data.currentCycle.overall.utilization },
+          seven_day_opus: { utilization: data.currentCycle.models?.opus?.utilization || 0 },
+          seven_day_sonnet: { utilization: data.currentCycle.models?.sonnet?.utilization || 0 },
+        };
+        const fresh = computeCycleData(cycleRecords, quotaShim);
+        Object.assign(data.currentCycle, fresh);
+
         const start = new Date(data.currentCycle.start);
         const now = new Date();
         data.currentCycle.daysElapsed = Math.round(((now - start) / (1000 * 60 * 60 * 24)) * 10) / 10;

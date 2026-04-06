@@ -417,7 +417,8 @@ describe('GET /api/quota-cycles (integration)', () => {
     expect(res.status).to.equal(200);
     expect(data.currentCycle).to.be.an('object');
     expect(data.currentCycle.resets_at).to.equal('2026-04-05T00:00:00.000Z');
-    expect(data.currentCycle.overall.actualTokens).to.equal(10000);
+    // Recomputed from parsed records: 1000 input + 500 output + 100 cache_creation = 1600
+    expect(data.currentCycle.overall.actualTokens).to.equal(1600);
     expect(data.history).to.have.length(1);
     expect(data.machines).to.include('test');
   });
