@@ -161,9 +161,9 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     <th class="align-right">Total</th>
     <th class="align-right">Excl CR</th>
     <th class="align-right">Cost</th>
-    <th class="align-right col-highlight">Proj Tokens</th>
-    <th class="align-right col-highlight">Proj Cost</th>
-    <th class="align-right">\u0394 Prev</th>
+    <th class="align-right col-highlight">Proj Token Limit</th>
+    <th class="align-right col-highlight">Proj Cost Limit</th>
+    <th class="align-right">\u0394 Limit</th>
   </tr>`;
   table.appendChild(thead);
 
@@ -178,8 +178,8 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
 
     let deltaStr = '—';
     let deltaClass = '';
-    if (prev && prev.projectedTokensAt100 != null && d.projectedTokensAt100 != null && prev.projectedTokensAt100 > 0) {
-      const delta = ((d.projectedTokensAt100 - prev.projectedTokensAt100) / prev.projectedTokensAt100) * 100;
+    if (prev && prev.projectedCostAt100 != null && d.projectedCostAt100 != null && prev.projectedCostAt100 > 0) {
+      const delta = ((d.projectedCostAt100 - prev.projectedCostAt100) / prev.projectedCostAt100) * 100;
       deltaStr = `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%`;
       deltaClass = delta >= 0 ? 'delta-positive' : 'delta-negative';
     }

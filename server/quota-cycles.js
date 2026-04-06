@@ -8,6 +8,35 @@ import { calculateRecordCost } from './pricing.js';
 const MAX_HISTORY = 52;
 
 /**
+ * Normalize a cycle's resets_at to hour precision for use as a dedup key.
+ * The API returns varying sub-second precision across calls and machines,
+ * so raw strings cannot be used for grouping.
+ */
+function cyclePeriodKey(cycle) {
+  const d = new Date(cycle.resets_at);
+  d.setMinutes(0, 0, 0);
+  return d.toISOString();
+}
+
+/**
+ * Deduplicate history entries that represent the same quota cycle period.
+ * Keeps the entry with the latest lastUpdated for each period.
+ */
+function deduplicateHistory(history) {
+  const byKey = new Map();
+  for (const entry of history) {
+    const key = cyclePeriodKey(entry);
+    const existing = byKey.get(key);
+    if (!existing || new Date(entry.lastUpdated) > new Date(existing.lastUpdated)) {
+      byKey.set(key, entry);
+    }
+  }
+  const result = Array.from(byKey.values());
+  result.sort((a, b) => new Date(b.resets_at) - new Date(a.resets_at));
+  return result;
+}
+
+/**
  * Pure computation: given records (already filtered to a cycle) and quota data,
  * compute actual tokens/cost and project at 100% utilization.
  */
@@ -121,12 +150,13 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
     snapshot = { schemaVersion: 1, machineName, currentCycle: null, history: [] };
   }
 
-  // Compare normalized timestamps to detect actual cycle boundary changes
-  const storedResetNorm = snapshot.currentCycle
-    ? new Date(snapshot.currentCycle.resets_at).setMilliseconds(0)
-    : null;
-  if (snapshot.currentCycle && storedResetNorm !== rawResetsAt.getTime()) {
+  // Compare normalized period keys to detect actual cycle boundary changes.
+  // Uses hour-precision keys to tolerate varying sub-second timestamps from the API.
+  const storedKey = snapshot.currentCycle ? cyclePeriodKey(snapshot.currentCycle) : null;
+  const newKey = cyclePeriodKey({ resets_at: resetsAt });
+  if (snapshot.currentCycle && storedKey !== newKey) {
     snapshot.history.unshift(snapshot.currentCycle);
+    snapshot.history = deduplicateHistory(snapshot.history);
     if (snapshot.history.length > MAX_HISTORY) {
       snapshot.history = snapshot.history.slice(0, MAX_HISTORY);
     }
@@ -181,34 +211,55 @@ export function loadQuotaCycles(machineName, syncDir, snapshotDir) {
   const machines = snapshots.map(s => s.machineName);
 
   if (snapshots.length === 1) {
+    // Single machine: duplicates are time-series snapshots of the same data,
+    // so dedup (keep most recent) and filter out current-cycle overlap.
     const s = snapshots[0];
-    return { currentCycle: s.currentCycle, history: s.history, machines };
+    let history = deduplicateHistory(s.history);
+    if (s.currentCycle) {
+      const currentKey = cyclePeriodKey(s.currentCycle);
+      history = history.filter(h => cyclePeriodKey(h) !== currentKey);
+    }
+    return { currentCycle: s.currentCycle, history, machines };
   }
 
-  return {
-    currentCycle: mergeCycles(snapshots.map(s => s.currentCycle).filter(Boolean)),
-    history: mergeHistories(snapshots.map(s => s.history)),
-    machines,
-  };
+  // Multi-machine: dedup within each machine first (removes false-switch
+  // duplicates), then merge across machines (sums different machines' data).
+  const dedupedHistories = snapshots.map(s => deduplicateHistory(s.history));
+  let currentCycle = mergeCycles(snapshots.map(s => s.currentCycle).filter(Boolean));
+  let history = mergeHistories(dedupedHistories);
+
+  // If history contains entries for the current cycle's period (e.g. from an
+  // offline machine whose cycle was archived), merge them INTO the current
+  // cycle instead of dropping them.
+  if (currentCycle) {
+    const currentKey = cyclePeriodKey(currentCycle);
+    const overlapping = history.filter(h => cyclePeriodKey(h) === currentKey);
+    history = history.filter(h => cyclePeriodKey(h) !== currentKey);
+    if (overlapping.length > 0) {
+      currentCycle = mergeSamePeriodCycles([currentCycle, ...overlapping]);
+    }
+  }
+
+  return { currentCycle, history, machines };
 }
 
 function mergeCycles(cycles) {
   if (cycles.length === 0) return null;
   if (cycles.length === 1) return cycles[0];
 
-  const byReset = new Map();
+  const byPeriod = new Map();
   for (const c of cycles) {
-    const key = c.resets_at;
-    if (!byReset.has(key)) byReset.set(key, []);
-    byReset.get(key).push(c);
+    const key = cyclePeriodKey(c);
+    if (!byPeriod.has(key)) byPeriod.set(key, []);
+    byPeriod.get(key).push(c);
   }
 
   let bestKey = null, bestCount = 0;
-  for (const [key, arr] of byReset) {
+  for (const [key, arr] of byPeriod) {
     if (arr.length > bestCount || (arr.length === bestCount && key > bestKey)) { bestKey = key; bestCount = arr.length; }
   }
 
-  const sameCycle = byReset.get(bestKey);
+  const sameCycle = byPeriod.get(bestKey);
   return mergeSamePeriodCycles(sameCycle);
 }
 
@@ -255,17 +306,17 @@ function mergeMetrics(metricsArray, utilization) {
 }
 
 function mergeHistories(historyArrays) {
-  const byReset = new Map();
+  const byPeriod = new Map();
   for (const history of historyArrays) {
     for (const entry of history) {
-      const key = entry.resets_at;
-      if (!byReset.has(key)) byReset.set(key, []);
-      byReset.get(key).push(entry);
+      const key = cyclePeriodKey(entry);
+      if (!byPeriod.has(key)) byPeriod.set(key, []);
+      byPeriod.get(key).push(entry);
     }
   }
 
   const merged = [];
-  for (const [, entries] of byReset) {
+  for (const [, entries] of byPeriod) {
     merged.push(mergeSamePeriodCycles(entries));
   }
 

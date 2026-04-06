@@ -28,6 +28,7 @@ const state = {
 };
 
 let datePicker, planSelector;
+let _cachedCycleData = null;
 
 function formatNumber(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
@@ -61,7 +62,8 @@ function getQuotaWindow(sevenDay) {
 
 async function loadQuota() {
   try {
-    const data = await fetchQuota();
+    const [data, cycleData] = await Promise.all([fetchQuota(), fetchQuotaCycles()]);
+    _cachedCycleData = cycleData;
 
     // Use the actual quota window (resets_at - 7 days → resets_at)
     let cost7dValue = 0;
@@ -72,12 +74,16 @@ async function loadQuota() {
     if (window && sevenDay.utilization > 0) {
       quotaWindowFrom = window.from;
       quotaWindowTo = window.to;
-      const cost7d = await fetchCost({
-        from: window.from.toISOString(),
-        to: window.to.toISOString(),
-        plan: state.plan.plan,
-      });
-      cost7dValue = cost7d.api_equivalent_cost_usd;
+      // Prefer cycle data (multi-machine merged) over cost API (local only)
+      cost7dValue = cycleData?.currentCycle?.overall?.actualCost || 0;
+      if (cost7dValue === 0) {
+        const cost7d = await fetchCost({
+          from: window.from.toISOString(),
+          to: window.to.toISOString(),
+          plan: state.plan.plan,
+        });
+        cost7dValue = cost7d.api_equivalent_cost_usd;
+      }
     }
 
     renderQuotaGauges(document.getElementById('chart-quota'), data, {
@@ -85,17 +91,18 @@ async function loadQuota() {
     });
     const el = document.getElementById('quota-last-updated');
     if (el && data.lastFetched) el.textContent = `Updated ${new Date(data.lastFetched).toLocaleTimeString()} ${getTimezoneAbbr()}`;
-    loadQuotaCyclesData();
-  } catch { /* silently degrade */ }
-}
-
-async function loadQuotaCyclesData() {
-  try {
-    const data = await fetchQuotaCycles();
-    renderQuotaCycles(document.getElementById('chart-quota-cycles'), data, {
+    renderQuotaCycles(document.getElementById('chart-quota-cycles'), cycleData, {
       modelKey: state.cycleModel,
     });
   } catch { /* silently degrade */ }
+}
+
+function loadQuotaCyclesData() {
+  if (_cachedCycleData) {
+    renderQuotaCycles(document.getElementById('chart-quota-cycles'), _cachedCycleData, {
+      modelKey: state.cycleModel,
+    });
+  }
 }
 
 function startAutoRefresh() {
