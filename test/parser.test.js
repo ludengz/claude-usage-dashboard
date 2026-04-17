@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { parseLogDirectory, parseLogFile, deriveProjectName, parseMultiMachineDirectory } from '../server/parser.js';
+import { parseLogDirectory, parseLogFile, deriveProjectName, parseMultiMachineDirectory, dedupByMessageId } from '../server/parser.js';
 
 describe('deriveProjectName', () => {
   it('extracts last segment from encoded directory name', () => {
@@ -276,5 +276,77 @@ describe('parseMultiMachineDirectory', () => {
   it('returns empty array for non-existent directory', () => {
     const records = parseMultiMachineDirectory('/nonexistent/path');
     expect(records).to.deep.equal([]);
+  });
+});
+
+describe('dedupByMessageId', () => {
+  it('collapses streaming snapshots to the row with largest output_tokens', () => {
+    const records = [
+      { messageId: 'msg_A', model: 'claude-opus-4-6', input_tokens: 100, output_tokens: 2,   cache_read_tokens: 5000, cache_creation_tokens: 0 },
+      { messageId: 'msg_A', model: 'claude-opus-4-6', input_tokens: 100, output_tokens: 2,   cache_read_tokens: 5000, cache_creation_tokens: 0 },
+      { messageId: 'msg_A', model: 'claude-opus-4-6', input_tokens: 100, output_tokens: 218, cache_read_tokens: 5000, cache_creation_tokens: 0 },
+    ];
+    const out = dedupByMessageId(records);
+    expect(out).to.have.length(1);
+    expect(out[0].output_tokens).to.equal(218);
+  });
+
+  it('collapses the same messageId seen across multiple machines', () => {
+    const records = [
+      { messageId: 'msg_X', model: 'claude-sonnet-4-6', input_tokens: 50, output_tokens: 500, cache_read_tokens: 1000, cache_creation_tokens: 0, project: 'p', sessionId: 's1' },
+      { messageId: 'msg_X', model: 'claude-sonnet-4-6', input_tokens: 50, output_tokens: 500, cache_read_tokens: 1000, cache_creation_tokens: 0, project: 'p', sessionId: 's1' },
+    ];
+    const out = dedupByMessageId(records);
+    expect(out).to.have.length(1);
+    expect(out[0].output_tokens).to.equal(500);
+  });
+
+  it('passes through records that lack a messageId without deduping', () => {
+    const records = [
+      { messageId: null, model: 'claude-opus-4-6', input_tokens: 10, output_tokens: 20, cache_read_tokens: 0, cache_creation_tokens: 0 },
+      { messageId: null, model: 'claude-opus-4-6', input_tokens: 10, output_tokens: 20, cache_read_tokens: 0, cache_creation_tokens: 0 },
+    ];
+    const out = dedupByMessageId(records);
+    expect(out).to.have.length(2);
+  });
+
+  it('keeps distinct messageIds as separate records', () => {
+    const records = [
+      { messageId: 'msg_1', model: 'claude-opus-4-6', input_tokens: 10, output_tokens: 100, cache_read_tokens: 0, cache_creation_tokens: 0 },
+      { messageId: 'msg_2', model: 'claude-opus-4-6', input_tokens: 10, output_tokens: 200, cache_read_tokens: 0, cache_creation_tokens: 0 },
+    ];
+    const out = dedupByMessageId(records);
+    expect(out).to.have.length(2);
+  });
+});
+
+describe('parseLogDirectory - dedup integration', () => {
+  let tmpDir;
+
+  before(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'parser-dedup-test-'));
+    const projectDir = path.join(tmpDir, '-Users-test-Workspace-myproject');
+    fs.mkdirSync(projectDir);
+    // Same message.id written as three streaming snapshots
+    fs.writeFileSync(path.join(projectDir, 'sess.jsonl'), [
+      JSON.stringify({ type: 'assistant', sessionId: 's1', timestamp: '2026-03-10T10:00:00.000Z',
+        message: { id: 'msg_stream', model: 'claude-opus-4-6',
+          usage: { input_tokens: 100, output_tokens: 2,    cache_creation_input_tokens: 0, cache_read_input_tokens: 5000 } } }),
+      JSON.stringify({ type: 'assistant', sessionId: 's1', timestamp: '2026-03-10T10:00:01.000Z',
+        message: { id: 'msg_stream', model: 'claude-opus-4-6',
+          usage: { input_tokens: 100, output_tokens: 50,   cache_creation_input_tokens: 0, cache_read_input_tokens: 5000 } } }),
+      JSON.stringify({ type: 'assistant', sessionId: 's1', timestamp: '2026-03-10T10:00:02.000Z',
+        message: { id: 'msg_stream', model: 'claude-opus-4-6',
+          usage: { input_tokens: 100, output_tokens: 250,  cache_creation_input_tokens: 0, cache_read_input_tokens: 5000 } } }),
+    ].join('\n'));
+  });
+
+  after(() => { fs.rmSync(tmpDir, { recursive: true }); });
+
+  it('collapses streaming duplicates so each message counts once at its final cumulative usage', () => {
+    const records = parseLogDirectory(tmpDir);
+    expect(records).to.have.length(1);
+    expect(records[0].output_tokens).to.equal(250);
+    expect(records[0].input_tokens).to.equal(100);
   });
 });

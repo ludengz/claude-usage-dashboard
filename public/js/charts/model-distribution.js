@@ -37,8 +37,13 @@ export function renderModelDistribution(container, data) {
     .style('flex-shrink', '0')
     .append('g').attr('transform', `translate(${size / 2},${size / 2})`);
 
-  const total = d3.sum(data.models, d => d.total_tokens);
-  const pie = d3.pie().value(d => d.total_tokens).sort(null);
+  // Use non-cache tokens (input + output) for both slice size and percentages
+  // so the share of each model matches Anthropic's official usage report.
+  // Cache reads dominate total_tokens and drown out small-output models like
+  // new Opus 4.7, making the distribution misleading.
+  const nonCache = m => (m.input_tokens || 0) + (m.output_tokens || 0);
+  const total = d3.sum(data.models, nonCache);
+  const pie = d3.pie().value(nonCache).sort(null);
   const arc = d3.arc().innerRadius(innerRadius).outerRadius(radius);
 
   svg.selectAll('path').data(pie(data.models)).enter().append('path')
@@ -47,7 +52,7 @@ export function renderModelDistribution(container, data) {
 
   const legend = wrapper.append('div');
   data.models.forEach(m => {
-    const pct = ((m.total_tokens / total) * 100).toFixed(1);
+    const pct = total > 0 ? ((nonCache(m) / total) * 100).toFixed(1) : '0.0';
     const color = MODEL_COLORS[m.id] || '#64748b';
     const shortName = MODEL_DISPLAY[m.id] || m.id.replace('claude-', '').replace(/-(\d+)-(\d+)/, ' $1.$2');
     legend.append('div').style('font-size', '11px').style('color', '#94a3b8').style('margin-bottom', '4px')

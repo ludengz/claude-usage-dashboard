@@ -61,6 +61,7 @@ export function parseLogFile(filePath) {
       sessionId: entry.sessionId,
       timestamp: entry.timestamp,
       model,
+      messageId: entry.message?.id || null,
       input_tokens: usage.input_tokens || 0,
       output_tokens: usage.output_tokens || 0,
       cache_creation_tokens: usage.cache_creation_input_tokens || 0,
@@ -69,6 +70,33 @@ export function parseLogFile(filePath) {
   }
 
   return records;
+}
+
+/**
+ * Deduplicate assistant records by `messageId`.
+ *
+ * Claude Code JSONL contains one line per streaming snapshot, not one per
+ * message. Multiple lines can share the same `message.id`, with the early
+ * ones reporting partial cumulative `output_tokens` and the final one the
+ * full total. Multi-machine sync further multiplies the same message across
+ * machines. Anthropic bills the server-side message once, so we keep the
+ * record whose `output_tokens` is largest (the final cumulative snapshot)
+ * for each `messageId`. Records without a `messageId` pass through — they
+ * predate the id field and are assumed to already be one-per-message.
+ */
+export function dedupByMessageId(records) {
+  const best = new Map();
+  const passthrough = [];
+
+  for (const r of records) {
+    if (!r.messageId) { passthrough.push(r); continue; }
+    const prev = best.get(r.messageId);
+    if (!prev || r.output_tokens > prev.output_tokens) {
+      best.set(r.messageId, r);
+    }
+  }
+
+  return [...best.values(), ...passthrough];
 }
 
 export function parseLogDirectory(baseDir) {
@@ -127,7 +155,7 @@ export function parseLogDirectory(baseDir) {
     }
   }
 
-  return allRecords;
+  return dedupByMessageId(allRecords);
 }
 
 export function parseMultiMachineDirectory(syncDir) {
@@ -147,5 +175,5 @@ export function parseMultiMachineDirectory(syncDir) {
     allRecords.push(...records);
   }
 
-  return allRecords;
+  return dedupByMessageId(allRecords);
 }

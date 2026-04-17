@@ -145,34 +145,42 @@ export function createApiRouter(logBaseDir, options = {}) {
         options.syncDir || null,
         options.snapshotDir
       );
-      if (data.currentCycle) {
-        // Recompute current cycle from parsed records — in sync mode this
-        // includes all machines' data, matching /api/cost and /api/usage.
-        // The snapshot's utilization % (from the quota API) is preserved.
-        // Convert UTC cycle dates to local date-only strings (YYYY-MM-DD) so
-        // filterByDateRange uses local midnight boundaries, matching the date
-        // picker's range that drives the summary cards and /api/cost.
-        const toLocalDate = (iso) => {
-          const d = new Date(iso);
-          return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-        };
-        const records = refreshRecords();
+
+      // Recompute token/cost fields from the live parser for every cycle
+      // (current + history). The snapshot's utilization % (from the Anthropic
+      // quota API) is preserved — that value is Anthropic's truth and cannot
+      // be reconstructed locally — but all other fields come from the current
+      // parser so historical cycles reflect dedup fixes applied to older logs.
+      //
+      // Convert UTC cycle dates to local date-only strings (YYYY-MM-DD) so
+      // filterByDateRange uses local midnight boundaries, matching the date
+      // picker's range that drives the summary cards and /api/cost.
+      const toLocalDate = (iso) => {
+        const d = new Date(iso);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      };
+      const records = refreshRecords();
+      const recompute = (cycle) => {
         const cycleRecords = filterByDateRange(
-          records, toLocalDate(data.currentCycle.start), toLocalDate(data.currentCycle.resets_at)
+          records, toLocalDate(cycle.start), toLocalDate(cycle.resets_at)
         );
         const quotaShim = {
-          seven_day: { utilization: data.currentCycle.overall.utilization },
-          seven_day_opus: { utilization: data.currentCycle.models?.opus?.utilization || 0 },
-          seven_day_sonnet: { utilization: data.currentCycle.models?.sonnet?.utilization || 0 },
+          seven_day: { utilization: cycle.overall?.utilization || 0 },
+          seven_day_opus: { utilization: cycle.models?.opus?.utilization || 0 },
+          seven_day_sonnet: { utilization: cycle.models?.sonnet?.utilization || 0 },
         };
-        const fresh = computeCycleData(cycleRecords, quotaShim);
-        Object.assign(data.currentCycle, fresh);
+        Object.assign(cycle, computeCycleData(cycleRecords, quotaShim));
+      };
 
+      if (data.currentCycle) {
+        recompute(data.currentCycle);
         const start = new Date(data.currentCycle.start);
         const now = new Date();
         data.currentCycle.daysElapsed = Math.round(((now - start) / (1000 * 60 * 60 * 24)) * 10) / 10;
         data.currentCycle.daysTotal = 7;
       }
+      for (const cycle of data.history || []) recompute(cycle);
+
       res.json(data);
     } catch (err) {
       res.status(500).json({ error: err.message });

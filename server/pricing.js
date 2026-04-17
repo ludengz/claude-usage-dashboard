@@ -5,6 +5,12 @@ export const MODEL_PRICING = {
     cache_read_price_per_mtok: 0.50,
     cache_creation_price_per_mtok: 6.25,
   },
+  'claude-opus-4-7': {
+    input_price_per_mtok: 5,
+    output_price_per_mtok: 25,
+    cache_read_price_per_mtok: 0.50,
+    cache_creation_price_per_mtok: 6.25,
+  },
   'claude-sonnet-4-6': {
     input_price_per_mtok: 3,
     output_price_per_mtok: 15,

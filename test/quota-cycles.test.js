@@ -422,4 +422,16 @@ describe('GET /api/quota-cycles (integration)', () => {
     expect(data.history).to.have.length(1);
     expect(data.machines).to.include('test');
   });
+
+  it('recomputes historical cycle token/cost fields from live parser while keeping utilization', async () => {
+    const res = await fetch(`${baseUrl}/api/quota-cycles`);
+    const data = await res.json();
+    // History entry covers 3/22-3/29 where no records exist, so recomputed
+    // tokens/cost should be 0 — NOT the stale 30000/$15.00 from the snapshot.
+    // Utilization % from the snapshot (80) must still be preserved because
+    // it came from Anthropic's quota API and cannot be reconstructed locally.
+    expect(data.history[0].overall.utilization).to.equal(80);
+    expect(data.history[0].overall.actualTokens).to.equal(0);
+    expect(data.history[0].overall.actualCost).to.equal(0);
+  });
 });
