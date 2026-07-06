@@ -163,6 +163,7 @@ body {
 .tag-project { background: #1e3a5f; color: var(--blue-light); }
 .tag-model-sonnet { background: #1e3a5f; color: var(--blue-light); }
 .tag-model-opus { background: #3b1764; color: #c084fc; }
+.tag-model-fable { background: #4d1438; color: #f9a8d4; }
 .tag-model-haiku { background: #1a2e1a; color: var(--green); }
 
 .pagination {

@@ -4,8 +4,18 @@ function formatTokens(n) {
   return n.toString();
 }
 
+// Project and model names come straight from JSONL logs / directory names —
+// escape them before any innerHTML interpolation.
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
 const MODEL_DISPLAY = {
+  'claude-fable-5': 'fable 5',
   'claude-opus-4-6': 'opus 4.6',
+  'claude-opus-4-7': 'opus 4.7',
+  'claude-opus-4-8': 'opus 4.8',
+  'claude-sonnet-5': 'sonnet 5',
   'claude-sonnet-4-6': 'sonnet 4.6',
   'claude-haiku-4-5': 'haiku 4.5',
   'claude-haiku-4-5-20251001': 'haiku 4.5',
@@ -14,9 +24,10 @@ const MODEL_DISPLAY = {
 function modelTag(model) {
   const shortName = MODEL_DISPLAY[model] || model.replace('claude-', '').replace(/-(\d+)-(\d+)/, ' $1.$2');
   let cls = 'tag-model-sonnet';
-  if (model.includes('opus')) cls = 'tag-model-opus';
+  if (model.includes('fable')) cls = 'tag-model-fable';
+  else if (model.includes('opus')) cls = 'tag-model-opus';
   else if (model.includes('haiku')) cls = 'tag-model-haiku';
-  return `<span class="tag ${cls}">${shortName}</span>`;
+  return `<span class="tag ${cls}">${escapeHtml(shortName)}</span>`;
 }
 
 function formatDate(iso) {
@@ -73,7 +84,7 @@ export function renderSessionTable(container, data, { onSort, onPageChange }) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${formatDate(s.startTime)}</td>
-      <td><span class="tag tag-project">${s.project}</span></td>
+      <td><span class="tag tag-project">${escapeHtml(s.project)}</span></td>
       <td>${s.models.map(modelTag).join(' ')}</td>
       <td class="align-right" style="color:#60a5fa">${formatTokens(s.input_tokens)}</td>
       <td class="align-right" style="color:#f97316">${formatTokens(s.output_tokens)}</td>
@@ -104,8 +115,8 @@ export function renderSessionTable(container, data, { onSort, onPageChange }) {
   container.appendChild(table);
 
   const pagEl = document.getElementById('session-pagination');
+  if (pagEl) pagEl.innerHTML = ''; // always clear — stale buttons survive when results shrink to one page
   if (pagEl && data.pagination && data.pagination.total_pages > 1) {
-    pagEl.innerHTML = '';
     for (let i = 1; i <= data.pagination.total_pages; i++) {
       const btn = document.createElement('button');
       btn.textContent = i;

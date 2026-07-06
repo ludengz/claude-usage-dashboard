@@ -1,11 +1,19 @@
 const MODEL_COLORS = {
+  'claude-fable-5': '#ec4899',
+  'claude-sonnet-5': '#60a5fa',
   'claude-sonnet-4-6': '#3b82f6',
   'claude-opus-4-6': '#8b5cf6',
+  'claude-opus-4-7': '#a78bfa',
+  'claude-opus-4-8': '#7c3aed',
   'claude-haiku-4-5': '#f59e0b',
 };
 
 const MODEL_DISPLAY = {
+  'claude-fable-5': 'fable 5',
   'claude-opus-4-6': 'opus 4.6',
+  'claude-opus-4-7': 'opus 4.7',
+  'claude-opus-4-8': 'opus 4.8',
+  'claude-sonnet-5': 'sonnet 5',
   'claude-sonnet-4-6': 'sonnet 4.6',
   'claude-haiku-4-5': 'haiku 4.5',
   'claude-haiku-4-5-20251001': 'haiku 4.5',
@@ -55,7 +63,9 @@ export function renderModelDistribution(container, data) {
     const pct = total > 0 ? ((nonCache(m) / total) * 100).toFixed(1) : '0.0';
     const color = MODEL_COLORS[m.id] || '#64748b';
     const shortName = MODEL_DISPLAY[m.id] || m.id.replace('claude-', '').replace(/-(\d+)-(\d+)/, ' $1.$2');
-    legend.append('div').style('font-size', '11px').style('color', '#94a3b8').style('margin-bottom', '4px')
-      .html(`<span style="color:${color}">●</span> ${shortName} — ${pct}%`);
+    // Build via .text() — model ids come from logs and must not be injected as HTML
+    const row = legend.append('div').style('font-size', '11px').style('color', '#94a3b8').style('margin-bottom', '4px');
+    row.append('span').style('color', color).text('●');
+    row.append('span').text(` ${shortName} — ${pct}%`);
   });
 }

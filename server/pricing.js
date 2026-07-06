@@ -1,4 +1,10 @@
 export const MODEL_PRICING = {
+  'claude-fable-5': {
+    input_price_per_mtok: 10,
+    output_price_per_mtok: 50,
+    cache_read_price_per_mtok: 1.00,
+    cache_creation_price_per_mtok: 12.50,
+  },
   'claude-opus-4-6': {
     input_price_per_mtok: 5,
     output_price_per_mtok: 25,
@@ -11,7 +17,25 @@ export const MODEL_PRICING = {
     cache_read_price_per_mtok: 0.50,
     cache_creation_price_per_mtok: 6.25,
   },
+  'claude-opus-4-8': {
+    input_price_per_mtok: 5,
+    output_price_per_mtok: 25,
+    cache_read_price_per_mtok: 0.50,
+    cache_creation_price_per_mtok: 6.25,
+  },
+  'claude-sonnet-5': {
+    input_price_per_mtok: 3,
+    output_price_per_mtok: 15,
+    cache_read_price_per_mtok: 0.30,
+    cache_creation_price_per_mtok: 3.75,
+  },
   'claude-sonnet-4-6': {
+    input_price_per_mtok: 3,
+    output_price_per_mtok: 15,
+    cache_read_price_per_mtok: 0.30,
+    cache_creation_price_per_mtok: 3.75,
+  },
+  'claude-sonnet-4-5': {
     input_price_per_mtok: 3,
     output_price_per_mtok: 15,
     cache_read_price_per_mtok: 0.30,
@@ -31,8 +55,14 @@ export const PLAN_DEFAULTS = {
   max20x: 200,
 };
 
+// Log model ids may carry a release-date suffix (e.g. claude-haiku-4-5-20251001)
+// that has no dedicated pricing entry; strip it so they resolve to the base model.
+function normalizeModelId(modelId) {
+  return typeof modelId === 'string' ? modelId.replace(/-\d{8}$/, '') : modelId;
+}
+
 export function getModelPricing(modelId) {
-  return MODEL_PRICING[modelId] || null;
+  return MODEL_PRICING[normalizeModelId(modelId)] || null;
 }
 
 /**
@@ -44,7 +74,7 @@ export function getModelPricing(modelId) {
  * cost = input * input_rate + cache_read * read_rate + cache_creation * write_rate + output * output_rate
  */
 export function calculateRecordCost(record) {
-  const pricing = MODEL_PRICING[record.model];
+  const pricing = getModelPricing(record.model);
   if (!pricing) return 0;
 
   const M = 1_000_000;
