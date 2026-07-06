@@ -2,7 +2,10 @@ export function initDatePicker(container, onChange) {
   const today = new Date();
   const thirtyDaysAgo = new Date(today);
   thirtyDaysAgo.setDate(today.getDate() - 30);
-  const fmt = d => d.toISOString().slice(0, 10);
+  // Format using local date parts — toISOString() yields the UTC date, which
+  // drops "today" from the default range before 08:00 in UTC+8 etc., while the
+  // whole dashboard filters by local timezone.
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   const savedFrom = localStorage.getItem('datePickerFrom') || fmt(thirtyDaysAgo);
   const savedTo = localStorage.getItem('datePickerTo') || fmt(today);

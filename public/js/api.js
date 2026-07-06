@@ -5,13 +5,19 @@ function qs(params) {
   return entries.length ? '?' + new URLSearchParams(entries).toString() : '';
 }
 
-export async function fetchUsage(params = {}) { return (await fetch(`${BASE}/usage${qs(params)}`)).json(); }
-export async function fetchModels(params = {}) { return (await fetch(`${BASE}/models${qs(params)}`)).json(); }
-export async function fetchProjects(params = {}) { return (await fetch(`${BASE}/projects${qs(params)}`)).json(); }
-export async function fetchSessions(params = {}) { return (await fetch(`${BASE}/sessions${qs(params)}`)).json(); }
-export async function fetchCost(params = {}) { return (await fetch(`${BASE}/cost${qs(params)}`)).json(); }
-export async function fetchCache(params = {}) { return (await fetch(`${BASE}/cache${qs(params)}`)).json(); }
-export async function fetchStatus() { return (await fetch(`${BASE}/status`)).json(); }
-export async function fetchQuota() { return (await fetch(`${BASE}/quota`)).json(); }
-export async function fetchSubscription() { return (await fetch(`${BASE}/subscription`)).json(); }
-export async function fetchQuotaCycles() { return (await fetch(`${BASE}/quota-cycles`)).json(); }
+async function getJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+  return res.json();
+}
+
+export async function fetchUsage(params = {}) { return getJSON(`${BASE}/usage${qs(params)}`); }
+export async function fetchModels(params = {}) { return getJSON(`${BASE}/models${qs(params)}`); }
+export async function fetchProjects(params = {}) { return getJSON(`${BASE}/projects${qs(params)}`); }
+export async function fetchSessions(params = {}) { return getJSON(`${BASE}/sessions${qs(params)}`); }
+export async function fetchCost(params = {}) { return getJSON(`${BASE}/cost${qs(params)}`); }
+export async function fetchCache(params = {}) { return getJSON(`${BASE}/cache${qs(params)}`); }
+export async function fetchStatus() { return getJSON(`${BASE}/status`); }
+export async function fetchQuota() { return getJSON(`${BASE}/quota`); }
+export async function fetchSubscription() { return getJSON(`${BASE}/subscription`); }
+export async function fetchQuotaCycles() { return getJSON(`${BASE}/quota-cycles`); }

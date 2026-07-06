@@ -15,6 +15,18 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
+// Ctrl+C delivers SIGINT (macOS) / CTRL_C_EVENT (Windows) to BOTH this wrapper
+// and the server child. Without handlers the wrapper dies first with the default
+// action, returning the shell prompt while the child is still shutting down
+// (and orphaning it on some platforms). No-op handlers let the child own the
+// graceful shutdown; spawnSync then returns its exit status.
+process.on('SIGINT', () => {});
+process.on('SIGTERM', () => {});
+
 const serverPath = join(__dirname, '..', 'server', 'index.js');
 const result = spawnSync(process.execPath, [serverPath], { stdio: 'inherit' });
-process.exit(result.status || 0);
+if (result.error) {
+  console.error('Failed to start server:', result.error.message);
+  process.exit(1);
+}
+process.exit(result.status ?? 0);

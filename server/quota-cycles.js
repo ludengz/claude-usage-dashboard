@@ -4,6 +4,7 @@ import os from 'os';
 import { parseLogDirectory } from './parser.js';
 import { filterByDateRange } from './aggregator.js';
 import { calculateRecordCost } from './pricing.js';
+import { sanitizeMachineName } from './sync.js';
 
 const MAX_HISTORY = 52;
 
@@ -14,7 +15,9 @@ const MAX_HISTORY = 52;
  */
 function cyclePeriodKey(cycle) {
   const d = new Date(cycle.resets_at);
-  d.setMinutes(0, 0, 0);
+  // Round in UTC: local-time rounding diverges across machines in
+  // half-hour-offset timezones (UTC+5:30 etc.), breaking cross-machine dedup.
+  d.setUTCMinutes(0, 0, 0);
   return d.toISOString();
 }
 
@@ -134,7 +137,9 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
   if (!quotaData?.available || !quotaData.seven_day?.resets_at) return;
 
   const dir = snapshotDir || syncDir || path.join(os.homedir(), '.claude');
-  const filePath = path.join(dir, `quota-cycles-${machineName}.json`);
+  // Same sanitization as sync.js — raw names with ':' or '/' fail on Windows
+  // and would split the snapshot identity from the sync-dir identity.
+  const filePath = path.join(dir, `quota-cycles-${sanitizeMachineName(machineName)}.json`);
 
   // Normalize resets_at to second precision — the API returns varying microseconds
   // on each call (e.g. .905316 vs .581788) which would cause false cycle switches
@@ -179,7 +184,10 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
   const currentKey = cyclePeriodKey(snapshot.currentCycle);
   snapshot.history = snapshot.history.filter(h => cyclePeriodKey(h) !== currentKey);
 
-  fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2));
+  // Write atomically — other machines read this file from the shared mount.
+  const tmpPath = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(snapshot, null, 2));
+  fs.renameSync(tmpPath, filePath);
 }
 
 /**

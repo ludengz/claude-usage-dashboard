@@ -98,7 +98,10 @@ describe('syncLocalToShared', () => {
     expect(fs.existsSync(path.join(newSyncDir, 'mac', '-Users-test-Workspace-proj', 'sess.jsonl'))).to.be.true;
   });
 
-  it('handles unwritable sync-dir gracefully without throwing', async () => {
+  it('handles unwritable sync-dir gracefully without throwing', async function () {
+    // chmod 0o444 only sets FILE_ATTRIBUTE_READONLY on Windows, which does not
+    // prevent creating files inside a directory — the premise can't be set up there.
+    if (process.platform === 'win32') this.skip();
     const readonlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-readonly-'));
     const projDir = path.join(localDir, '-Users-test-Workspace-proj');
     fs.mkdirSync(projDir, { recursive: true });

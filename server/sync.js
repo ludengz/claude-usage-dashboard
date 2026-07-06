@@ -8,6 +8,22 @@ export function sanitizeMachineName(name) {
   return clean || 'unknown-host';
 }
 
+/**
+ * Copy via a temp file + rename so readers on other machines never observe a
+ * half-written file (fs.copyFile truncates the destination before writing).
+ * Temp files don't end in .jsonl, so parsers skip them.
+ */
+async function atomicCopy(src, dest) {
+  const tmp = `${dest}.${process.pid}.tmp`;
+  try {
+    await fs.copyFile(src, tmp);
+    await fs.rename(tmp, dest);
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => {});
+    throw err;
+  }
+}
+
 export async function syncLocalToShared(localDir, syncDir, machineName) {
   const safeName = sanitizeMachineName(machineName);
   const machineDir = path.join(syncDir, safeName);
@@ -48,7 +64,7 @@ export async function syncLocalToShared(localDir, syncDir, machineName) {
 
         if (needsSync) {
           await fs.mkdir(path.join(machineDir, dir.name), { recursive: true });
-          await fs.copyFile(localFile, sharedFile);
+          await atomicCopy(localFile, sharedFile);
           syncedFiles++;
         }
       } catch (err) {
@@ -82,7 +98,7 @@ export async function syncLocalToShared(localDir, syncDir, machineName) {
 
           if (needsSync) {
             await fs.mkdir(path.join(machineDir, dir.name, sessionDirName, 'subagents'), { recursive: true });
-            await fs.copyFile(localSubFile, sharedSubFile);
+            await atomicCopy(localSubFile, sharedSubFile);
             syncedFiles++;
           }
         } catch (err) {

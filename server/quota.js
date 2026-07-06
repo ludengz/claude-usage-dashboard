@@ -14,7 +14,7 @@ export function createQuotaFetcher(options = {}) {
     if (cached && (now - lastFetched) < CACHE_TTL) return cached;
     if (fetchInProgress) return fetchInProgress;
 
-    fetchInProgress = (async () => {
+    const inflight = (async () => {
       try {
         const token = getToken();
         if (!token) return cached || { available: false, error: 'no_credentials' };
@@ -37,12 +37,19 @@ export function createQuotaFetcher(options = {}) {
         return cached;
       } catch (err) {
         return cached || { available: false, error: err.message };
-      } finally {
-        fetchInProgress = null;
       }
     })();
 
-    return fetchInProgress;
+    // Clear the in-flight slot only after the assignment below. A `finally`
+    // inside the IIFE runs BEFORE this assignment when the body completes
+    // synchronously (e.g. no token), permanently wedging fetchInProgress on
+    // an already-settled promise and freezing /quota until restart.
+    fetchInProgress = inflight;
+    inflight.finally(() => {
+      if (fetchInProgress === inflight) fetchInProgress = null;
+    });
+
+    return inflight;
   }
 
   return { fetchQuota };
