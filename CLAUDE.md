@@ -8,8 +8,8 @@ A dashboard that visualizes Claude Code usage by parsing JSONL session logs from
 
 ## Commands
 
-- **Start server:** `npm start` (runs on http://localhost:3000)
-- **Custom port:** `PORT=8080 npm start`
+- **Start server:** `npm start` (defaults to http://localhost:3000; if that port is unusable it falls back through 8080 → 8765 → an OS-assigned port and prints the actual URL. Windows Hyper-V/WSL "excluded port ranges" frequently cover 3000 and shift across reboots — see the startup warning if this happens)
+- **Custom port:** `PORT=8080 npm start` (an explicitly set PORT never falls back; it fails fast with a clear error)
 - **Run as npx package:** `npx claude-usage-dashboard`
 - **Run all tests:** `npm test`
 - **Run single test:** `npx mocha test/parser.test.js --timeout 5000`
@@ -41,7 +41,7 @@ npm package entry point (CJS). Uses `spawnSync` to run `server/index.js` as a ch
 ### Key Design Decisions
 
 - D3 v7 is served from `node_modules/d3/dist/` via an Express static mount at `/lib/d3/`. Frontend imports use `/lib/d3/d3.min.js`.
-- Logs are parsed once at server startup (no hot-reload). Restart server to pick up new data.
+- Logs are re-parsed on demand with a 5s TTL cache plus a per-file mtime/size parse cache — only changed files are re-read. New data appears without a server restart.
 - All cost calculations happen server-side in `pricing.js`. The frontend displays pre-computed values.
 - Date filtering and time bucketing use local timezone (not UTC).
 - The `/api/sessions` endpoint supports server-side pagination (`page`, `limit` params).

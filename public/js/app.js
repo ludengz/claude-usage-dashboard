@@ -94,7 +94,8 @@ async function loadQuota() {
     renderQuotaCycles(document.getElementById('chart-quota-cycles'), cycleData, {
       modelKey: state.cycleModel,
     });
-  } catch { /* silently degrade */ }
+    return data;
+  } catch { return null; /* silently degrade */ }
 }
 
 function loadQuotaCyclesData() {
@@ -124,25 +125,37 @@ function stopAutoRefresh() {
   }
 }
 
+let _loadSeq = 0;
+
 async function loadAll() {
+  // Guard against stale responses: auto-refresh and rapid user input fire
+  // concurrent batches; only the most recently started one may render.
+  const seq = ++_loadSeq;
   const params = { ...state.dateRange };
   const planParams = { ...state.dateRange, plan: state.plan.plan };
   if (state.plan.customPrice) planParams.customPrice = state.plan.customPrice;
 
-  const [usage, models, projects, sessions, cost, cache] = await Promise.all([
-    fetchUsage({ ...params, granularity: state.granularity }),
-    fetchModels(params),
-    fetchProjects(params),
-    fetchSessions({
-      ...params,
-      project: state.sessionProject,
-      sort: state.sessionSort,
-      order: state.sessionOrder,
-      page: state.sessionPage,
-    }),
-    fetchCost(planParams),
-    fetchCache(params),
-  ]);
+  let usage, models, projects, sessions, cost, cache;
+  try {
+    [usage, models, projects, sessions, cost, cache] = await Promise.all([
+      fetchUsage({ ...params, granularity: state.granularity }),
+      fetchModels(params),
+      fetchProjects(params),
+      fetchSessions({
+        ...params,
+        project: state.sessionProject,
+        sort: state.sessionSort,
+        order: state.sessionOrder,
+        page: state.sessionPage,
+      }),
+      fetchCost(planParams),
+      fetchCache(params),
+    ]);
+  } catch (err) {
+    console.error('Failed to load dashboard data:', err);
+    return;
+  }
+  if (seq !== _loadSeq) return;
 
   // Summary cards
   const t = usage.total;
@@ -235,6 +248,9 @@ function init() {
     state.plan = plan;
     loadAll();
   });
+  // Sync state with the selector's persisted choice — the hardcoded default
+  // (max20x) otherwise drives cost math while the dropdown shows e.g. Pro.
+  state.plan = planSelector.getPlan();
 
   document.getElementById('granularity-toggle').addEventListener('click', (e) => {
     if (e.target.tagName === 'BUTTON' && !e.target.disabled) {
@@ -306,7 +322,10 @@ function init() {
   fetchSubscription().then(info => {
     if (info.plan) {
       planSelector.setDetectedPlan(info.plan);
-      state.plan = planSelector.getPlan();
+      const detected = planSelector.getPlan();
+      const changed = detected.plan !== state.plan.plan || detected.customPrice !== state.plan.customPrice;
+      state.plan = detected;
+      if (changed) loadAll(); // re-render costs if detection updated the plan after the initial load
     }
     const tierLabels = { pro: 'Pro', max5x: 'Max 5x', max20x: 'Max 20x' };
     const label = tierLabels[info.plan];
@@ -316,17 +335,21 @@ function init() {
     }
   }).catch(() => {});
 
-  // Default date range to the 7-day quota window (resets_at - 7 days → resets_at)
-  fetchQuota().then(data => {
-    const window = getQuotaWindow(data.seven_day);
-    if (window) {
-      const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      datePicker.setRange(fmt(window.from), fmt(window.to));
-    }
-  }).catch(() => {}).finally(() => {
-    loadAll();
-    loadQuota();
-    startAutoRefresh();
+  // Paint immediately with the persisted/default date range — gating the
+  // first render on the quota round-trip to Anthropic held the whole
+  // dashboard blank for seconds. When quota arrives the gauges render, and
+  // if the 7-day window differs from the current range, setRange fires the
+  // date-picker onChange which reloads the data for the quota window.
+  loadAll();
+  startAutoRefresh();
+  loadQuota().then(data => {
+    const window = getQuotaWindow(data?.seven_day);
+    if (!window) return;
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const from = fmt(window.from);
+    const to = fmt(window.to);
+    const cur = datePicker.getRange();
+    if (cur.from !== from || cur.to !== to) datePicker.setRange(from, to);
   });
 }
 

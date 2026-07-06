@@ -10,43 +10,67 @@ import { updateQuotaCycleSnapshot, loadQuotaCycles, computeCycleData } from '../
 
 export function createApiRouter(logBaseDir, options = {}) {
   const router = Router();
-  const CACHE_TTL_MS = options.cacheTtlMs || 5000;
+  // ?? not ||: tests pass cacheTtlMs 0 to force a re-parse on every request
+  const CACHE_TTL_MS = options.cacheTtlMs ?? 5000;
   let cachedRecords = [];
   let lastRefreshed = null;
 
   // Background sync: runs periodically without blocking API requests
   if (options.syncDir) {
     const SYNC_INTERVAL_MS = options.syncIntervalMs || 30000;
+    let syncInFlight = false;
     const runBackgroundSync = () => {
-      syncLocalToShared(logBaseDir, options.syncDir, options.machineName).catch(err => {
+      if (syncInFlight) return Promise.resolve(); // slow shares can exceed the interval; don't stack syncs
+      syncInFlight = true;
+      return syncLocalToShared(logBaseDir, options.syncDir, options.machineName).catch(err => {
         console.warn('Background sync failed:', err.message);
-      });
+      }).finally(() => { syncInFlight = false; });
     };
-    runBackgroundSync();
+    // Warm the parse cache once the initial sync lands — warming earlier
+    // would cache a pre-sync view of the shared dir for a full TTL.
+    runBackgroundSync().then(() => refreshRecords());
     setInterval(runBackgroundSync, SYNC_INTERVAL_MS).unref();
   }
 
+  // Per-file parse cache (keyed by path, invalidated on mtime/size change).
+  // Without it every TTL expiry re-reads the full log set, which on a slow
+  // sync mount (Google Drive) can take longer than the TTL itself.
+  const fileCache = new Map();
+
   function refreshRecords() {
-    const now = Date.now();
-    if (lastRefreshed && (now - lastRefreshed) < CACHE_TTL_MS) return cachedRecords;
+    if (lastRefreshed && (Date.now() - lastRefreshed) < CACHE_TTL_MS) return cachedRecords;
     try {
+      const started = Date.now();
       if (options.syncDir) {
-        cachedRecords = parseMultiMachineDirectory(options.syncDir);
+        cachedRecords = parseMultiMachineDirectory(options.syncDir, fileCache);
       } else {
-        cachedRecords = parseLogDirectory(logBaseDir);
+        cachedRecords = parseLogDirectory(logBaseDir, fileCache);
       }
-      lastRefreshed = now;
-      console.log(`Parsed ${cachedRecords.length} records${options.syncDir ? ' (sync mode)' : ''}`);
+      // Stamp AFTER parsing: stamping the pre-parse time leaves the cache
+      // already expired whenever a parse outlasts the TTL, so every request
+      // triggers a full re-parse (the "slow initial load" failure mode).
+      lastRefreshed = Date.now();
+      console.log(`Parsed ${cachedRecords.length} records in ${lastRefreshed - started}ms${options.syncDir ? ' (sync mode)' : ''}`);
     } catch (err) {
       console.error('Failed to parse log directory:', err.message);
-      if (!lastRefreshed) lastRefreshed = now;
+      if (!lastRefreshed) lastRefreshed = Date.now();
     }
     return cachedRecords;
   }
 
+  // Warm the parse cache off the request path so the first page load after
+  // startup doesn't pay for the initial full parse. In sync mode, warming is
+  // chained onto the initial sync above instead.
+  if (!options.syncDir) setImmediate(refreshRecords);
+
   function applyFilters(query) {
     let records = filterByDateRange(refreshRecords(), query.from, query.to);
-    if (query.project) records = records.filter(r => r.project === query.project);
+    if (query.project) {
+      // Case-insensitive substring match — the UI offers a free-text filter box,
+      // and exact equality made any partial input return an empty table.
+      const q = query.project.toLowerCase();
+      records = records.filter(r => r.project && r.project.toLowerCase().includes(q));
+    }
     if (query.model) records = records.filter(r => r.model === query.model);
     return records;
   }
@@ -82,8 +106,8 @@ export function createApiRouter(logBaseDir, options = {}) {
     if (order === 'asc') sessions.reverse();
     const totalTokens = sessions.reduce((sum, s) => sum + s.total_tokens, 0);
     const totalCost = sessions.reduce((sum, s) => sum + s.estimated_cost_usd, 0);
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit) || 20));
     const totalSessions = sessions.length;
     const totalPages = Math.ceil(totalSessions / limit);
     sessions = sessions.slice((page - 1) * limit, page * limit);
@@ -106,7 +130,9 @@ export function createApiRouter(logBaseDir, options = {}) {
     }
     const costPerDay = Array.from(dayMap.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, cost]) => {
       const d = new Date(date);
-      const daysInMonth = new Date(d.getUTCFullYear(), d.getUTCMonth() + 1, 0).getUTCDate();
+      // getDate(), not getUTCDate(): the constructor builds a local-midnight
+      // date, whose UTC day is the previous day in UTC+ timezones.
+      const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
       return { date, api_cost: Math.round(cost * 100) / 100, subscription_daily: Math.round((subscriptionCost / daysInMonth) * 100) / 100 };
     });
     const savings = apiCost - subscriptionCost;

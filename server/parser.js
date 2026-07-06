@@ -25,8 +25,9 @@ export function deriveProjectName(dirName) {
     return wtIdx !== -1 ? result.slice(0, wtIdx) : result;
   }
 
-  // Fallback: strip Users-username prefix, return the rest
-  const userMatch = clean.match(/^Users-[^-]+-(.+)$/);
+  // Fallback: strip Users-username prefix, return the rest.
+  // macOS dir names start with "-" (paths start with "/"), e.g. "-Users-foo-proj".
+  const userMatch = clean.match(/^-?Users-[^-]+-(.+)$/);
   if (userMatch) {
     const rest = userMatch[1];
     const wtIdx = rest.indexOf('--claude-worktrees');
@@ -36,9 +37,8 @@ export function deriveProjectName(dirName) {
   return clean;
 }
 
-export function parseLogFile(filePath) {
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const lines = content.split('\n').filter(line => line.trim());
+function recordsFromLines(text) {
+  const lines = text.split('\n').filter(line => line.trim());
   const records = [];
 
   for (const line of lines) {
@@ -72,6 +72,10 @@ export function parseLogFile(filePath) {
   return records;
 }
 
+export function parseLogFile(filePath) {
+  return recordsFromLines(fs.readFileSync(filePath, 'utf-8'));
+}
+
 /**
  * Deduplicate assistant records by `messageId`.
  *
@@ -99,7 +103,86 @@ export function dedupByMessageId(records) {
   return [...best.values(), ...passthrough];
 }
 
-export function parseLogDirectory(baseDir) {
+/**
+ * Parse a log file, reusing a previous parse when the file is unchanged.
+ * The cache key is the absolute path; a file is considered unchanged when
+ * both mtime and size match. Sync-dir reads can sit on slow network/cloud
+ * mounts (e.g. Google Drive), where re-reading hundreds of MB per refresh
+ * dominates request latency — a stat is orders of magnitude cheaper.
+ */
+function readBytes(filePath, from, to) {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(to - from);
+    const read = fs.readSync(fd, buf, 0, to - from, from);
+    return buf.toString('utf-8', 0, read);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Cache layout: `records` covers exactly the first `parsedBytes` bytes of the
+ * file, which always end at a newline. The tail past `parsedBytes` (a line
+ * still being written, or a final line without a trailing newline) is parsed
+ * fresh on every call and never cached — a mid-write fragment fails
+ * JSON.parse today but must be picked up once its remaining bytes land.
+ *
+ * Session JSONL files are append-only (and sync copies preserve that), so a
+ * grown file re-parses only the appended bytes — this is what keeps refreshes
+ * cheap while an active session's log grows into hundreds of MB.
+ */
+function parseLogFileCached(filePath, fileCache) {
+  if (!fileCache) return parseLogFile(filePath);
+
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    return parseLogFile(filePath);
+  }
+
+  const prev = fileCache.get(filePath);
+  try {
+    if (prev && prev.mtimeMs === stat.mtimeMs && prev.size === stat.size) {
+      if (prev.parsedBytes === prev.size) return prev.records;
+      return prev.records.concat(recordsFromLines(readBytes(filePath, prev.parsedBytes, prev.size)));
+    }
+
+    if (prev && stat.size > prev.size) {
+      const text = readBytes(filePath, prev.parsedBytes, stat.size);
+      const lastNl = text.lastIndexOf('\n');
+      const stable = text.slice(0, lastNl + 1);
+      const entry = {
+        mtimeMs: stat.mtimeMs,
+        size: stat.size,
+        parsedBytes: prev.parsedBytes + Buffer.byteLength(stable, 'utf8'),
+        records: stable ? prev.records.concat(recordsFromLines(stable)) : prev.records,
+      };
+      fileCache.set(filePath, entry);
+      const rest = text.slice(lastNl + 1);
+      return rest ? entry.records.concat(recordsFromLines(rest)) : entry.records;
+    }
+  } catch {
+    // fall through to a full re-parse
+  }
+
+  // Full parse (new file, or shrunk/rewritten — not append-only growth)
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lastNl = content.lastIndexOf('\n');
+  const stable = content.slice(0, lastNl + 1);
+  const entry = {
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    parsedBytes: Buffer.byteLength(stable, 'utf8'),
+    records: recordsFromLines(stable),
+  };
+  fileCache.set(filePath, entry);
+  const rest = content.slice(lastNl + 1);
+  return rest ? entry.records.concat(recordsFromLines(rest)) : entry.records;
+}
+
+export function parseLogDirectory(baseDir, fileCache = null) {
   const allRecords = [];
 
   let projectDirs;
@@ -124,7 +207,7 @@ export function parseLogDirectory(baseDir) {
 
     for (const file of files) {
       const filePath = path.join(projectPath, file);
-      const records = parseLogFile(filePath);
+      const records = parseLogFileCached(filePath, fileCache);
       for (const record of records) {
         record.project = projectName;
         record.projectDirName = dir.name;
@@ -144,7 +227,7 @@ export function parseLogDirectory(baseDir) {
 
       for (const subFile of subagentFiles) {
         const subFilePath = path.join(subagentsPath, subFile);
-        const subRecords = parseLogFile(subFilePath);
+        const subRecords = parseLogFileCached(subFilePath, fileCache);
         for (const record of subRecords) {
           record.project = projectName;
           record.projectDirName = dir.name;
@@ -158,7 +241,7 @@ export function parseLogDirectory(baseDir) {
   return dedupByMessageId(allRecords);
 }
 
-export function parseMultiMachineDirectory(syncDir) {
+export function parseMultiMachineDirectory(syncDir, fileCache = null) {
   const allRecords = [];
 
   let machineDirs;
@@ -171,7 +254,7 @@ export function parseMultiMachineDirectory(syncDir) {
 
   for (const machineDir of machineDirs) {
     const machinePath = path.join(syncDir, machineDir.name);
-    const records = parseLogDirectory(machinePath);
+    const records = parseLogDirectory(machinePath, fileCache);
     allRecords.push(...records);
   }
 

@@ -17,6 +17,11 @@ describe('deriveProjectName', () => {
   it('handles worktree directory names', () => {
     expect(deriveProjectName('-Users-foo-Workspace-proj--claude-worktrees-branch')).to.equal('proj');
   });
+
+  it('falls back to stripping Users-username prefix on macOS dirs without markers', () => {
+    // macOS dir names keep the leading "-" (paths start with "/")
+    expect(deriveProjectName('-Users-foo-myproject')).to.equal('myproject');
+  });
 });
 
 describe('parseLogFile', () => {
@@ -348,5 +353,73 @@ describe('parseLogDirectory - dedup integration', () => {
     expect(records).to.have.length(1);
     expect(records[0].output_tokens).to.equal(250);
     expect(records[0].input_tokens).to.equal(100);
+  });
+});
+
+describe('parseLogDirectory - per-file parse cache', () => {
+  let tmpDir, filePath, cache;
+  const fixedTime = new Date('2026-07-01T00:00:00.000Z');
+
+  const line = (id, out) => JSON.stringify({
+    type: 'assistant', sessionId: 's1', timestamp: '2026-07-01T00:00:00.000Z',
+    message: { id, model: 'claude-sonnet-5', usage: { input_tokens: 10, output_tokens: out, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+  });
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'parser-cache-test-'));
+    const projectDir = path.join(tmpDir, '-Users-test-Workspace-cached');
+    fs.mkdirSync(projectDir);
+    filePath = path.join(projectDir, 'sess.jsonl');
+    // Real session logs are newline-terminated per entry
+    fs.writeFileSync(filePath, line('msg_1', 50) + '\n');
+    cache = new Map();
+  });
+
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true }); });
+
+  it('picks up appended records without dropping earlier ones', () => {
+    expect(parseLogDirectory(tmpDir, cache)).to.have.length(1);
+    fs.appendFileSync(filePath, line('msg_2', 60) + '\n');
+    const records = parseLogDirectory(tmpDir, cache);
+    expect(records).to.have.length(2);
+    expect(records.map(r => r.output_tokens).sort()).to.deep.equal([50, 60]);
+  });
+
+  it('serves the cached parse when mtime and size are unchanged', () => {
+    fs.utimesSync(filePath, fixedTime, fixedTime);
+    const first = parseLogDirectory(tmpDir, cache);
+    expect(first[0].output_tokens).to.equal(50);
+    // Rewrite with different content of identical byte length and restore
+    // mtime — the cache must treat the file as unchanged and skip the read.
+    fs.writeFileSync(filePath, line('msg_1', 99) + '\n');
+    fs.utimesSync(filePath, fixedTime, fixedTime);
+    const second = parseLogDirectory(tmpDir, cache);
+    expect(second[0].output_tokens).to.equal(50);
+  });
+
+  it('parses a trailing line that is not yet newline-terminated', () => {
+    // Simulates a writer mid-append: the last line has no trailing newline.
+    fs.appendFileSync(filePath, line('msg_2', 60));
+    expect(parseLogDirectory(tmpDir, cache)).to.have.length(2);
+    // Terminating newline + another record arrive later
+    fs.appendFileSync(filePath, '\n' + line('msg_3', 70) + '\n');
+    const records = parseLogDirectory(tmpDir, cache);
+    expect(records).to.have.length(3);
+    expect(records.map(r => r.output_tokens).sort()).to.deep.equal([50, 60, 70]);
+  });
+
+  it('re-parses fully when a file shrinks (rewrite, not append)', () => {
+    fs.appendFileSync(filePath, line('msg_2', 60) + '\n');
+    expect(parseLogDirectory(tmpDir, cache)).to.have.length(2);
+    fs.writeFileSync(filePath, line('msg_9', 10) + '\n');
+    const records = parseLogDirectory(tmpDir, cache);
+    expect(records).to.have.length(1);
+    expect(records[0].output_tokens).to.equal(10);
+  });
+
+  it('parses fresh on every call when no cache is provided', () => {
+    expect(parseLogDirectory(tmpDir)[0].output_tokens).to.equal(50);
+    fs.writeFileSync(filePath, line('msg_1', 99) + '\n');
+    expect(parseLogDirectory(tmpDir)[0].output_tokens).to.equal(99);
   });
 });
