@@ -63,6 +63,13 @@ export function createQuotaFetcher(options = {}) {
         });
 
         if (!res.ok) {
+          // Authentication failures are not a "slow down" signal, and the
+          // backoff check runs before getToken(), so backing off here would
+          // stop us re-reading credentials that the user or Claude may renew at
+          // any moment — leaving the gauge stale for up to the cap.
+          if (res.status === 401 || res.status === 403) {
+            return cached || { available: false, error: `http_${res.status}` };
+          }
           const error = res.status === 429 ? 'rate_limited' : `http_${res.status}`;
           return noteFailure({ available: false, error }, retryAfterMs(res));
         }

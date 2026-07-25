@@ -168,26 +168,36 @@ function withUnknownUtilization(cycleData) {
  */
 function synthesizeGapCycles(previousCycle, newResetsAt, allRecords) {
   const prevEnd = new Date(previousCycle.resets_at).getTime();
-  const filled = [];
+  const ends = [];
+  let cappedOut = false;
 
-  for (
-    let end = newResetsAt.getTime() - CYCLE_MS;
-    end - prevEnd > CYCLE_MS / 2 && filled.length < MAX_HISTORY;
-    end -= CYCLE_MS
-  ) {
-    const startIso = new Date(Math.max(end - CYCLE_MS, prevEnd)).toISOString();
+  for (let end = newResetsAt.getTime() - CYCLE_MS; end - prevEnd > CYCLE_MS / 2; end -= CYCLE_MS) {
+    if (ends.length >= MAX_HISTORY) {
+      cappedOut = true;
+      break;
+    }
+    ends.push(end);
+  }
+
+  return ends.map((end, i) => {
+    // Start the oldest emitted cycle at the previous reset so the residual — the
+    // sub-half-cycle remainder the loop stops before emitting — is absorbed
+    // rather than orphaned. A 50.21-day gap walks back to an oldest end 8.21
+    // days past prevEnd; without this its start would sit at prevEnd + 1.21
+    // days and that window's usage would vanish. Skipped when the cap cut the
+    // walk short, since the oldest emitted cycle is then nowhere near prevEnd.
+    const absorbsResidual = i === ends.length - 1 && !cappedOut;
+    const startIso = new Date(absorbsResidual ? prevEnd : end - CYCLE_MS).toISOString();
     const endIso = new Date(end).toISOString();
     const records = filterByDateRange(allRecords, startIso, endIso);
-    filled.push({
+    return {
       resets_at: endIso,
       start: startIso,
       lastUpdated: new Date().toISOString(),
       backfilled: true,
       ...withUnknownUtilization(computeCycleData(records, {})),
-    });
-  }
-
-  return filled;
+    };
+  });
 }
 
 /**
@@ -382,14 +392,25 @@ function mergeSamePeriodCycles(cycles) {
     new Date(a.lastUpdated) > new Date(b.lastUpdated) ? a : b
   );
 
+  // Utilization exists only in the quota API's answer, and a backfilled entry
+  // has none. Its lastUpdated is the moment of synthesis, so it always wins a
+  // recency contest and would discard a real observation another machine
+  // recorded for the same period. Take API-only metrics from an observed entry
+  // whenever one exists, regardless of timestamps.
+  const observed = cycles.filter(c => !c.backfilled);
+  const utilSource = observed.length
+    ? observed.reduce((a, b) => (new Date(a.lastUpdated) > new Date(b.lastUpdated) ? a : b))
+    : mostRecent;
+
   return {
     resets_at: mostRecent.resets_at,
     start: mostRecent.start,
     lastUpdated: mostRecent.lastUpdated,
-    overall: mergeMetrics(cycles.map(c => c.overall), mostRecent.overall.utilization),
+    ...(observed.length === 0 ? { backfilled: true } : {}),
+    overall: mergeMetrics(cycles.map(c => c.overall), utilSource.overall?.utilization ?? null),
     models: {
-      opus: mergeMetrics(cycles.map(c => c.models.opus), mostRecent.models?.opus?.utilization || 0),
-      sonnet: mergeMetrics(cycles.map(c => c.models.sonnet), mostRecent.models?.sonnet?.utilization || 0),
+      opus: mergeMetrics(cycles.map(c => c.models.opus), utilSource.models?.opus?.utilization ?? null),
+      sonnet: mergeMetrics(cycles.map(c => c.models.sonnet), utilSource.models?.sonnet?.utilization ?? null),
     },
   };
 }

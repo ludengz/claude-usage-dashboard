@@ -187,15 +187,33 @@ export function createApiRouter(logBaseDir, options = {}) {
       };
       const records = refreshRecords();
       const recompute = (cycle) => {
-        const cycleRecords = filterByDateRange(
-          records, toLocalDate(cycle.start), toLocalDate(cycle.resets_at)
-        );
+        // Backfilled cycles sit on exact reset boundaries and are not part of
+        // the date-picker alignment above. Rounding them to local dates would
+        // make every pair of adjacent repaired cycles share a boundary day and
+        // report nearly eight days of usage each, so keep their exact windows.
+        const [from, to] = cycle.backfilled
+          ? [cycle.start, cycle.resets_at]
+          : [toLocalDate(cycle.start), toLocalDate(cycle.resets_at)];
+        const cycleRecords = filterByDateRange(records, from, to);
         const quotaShim = {
           seven_day: { utilization: cycle.overall?.utilization || 0 },
           seven_day_opus: { utilization: cycle.models?.opus?.utilization || 0 },
           seven_day_sonnet: { utilization: cycle.models?.sonnet?.utilization || 0 },
         };
+        // A backfilled cycle has no utilization to preserve — the API only ever
+        // reports the window current when asked. The shim coerces null to 0 to
+        // keep the arithmetic total, so restore the unknowns afterwards or the
+        // response would claim a confident 0.0%.
+        const unknownUtil = cycle.overall?.utilization == null;
         Object.assign(cycle, computeCycleData(cycleRecords, quotaShim));
+        if (unknownUtil) {
+          for (const m of [cycle.overall, cycle.models?.opus, cycle.models?.sonnet]) {
+            if (!m) continue;
+            m.utilization = null;
+            m.projectedTokensAt100 = null;
+            m.projectedCostAt100 = null;
+          }
+        }
       };
 
       if (data.currentCycle) {

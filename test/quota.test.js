@@ -252,6 +252,37 @@ describe('createQuotaFetcher', () => {
     }
   });
 
+  it('does not back off on auth failures, so renewed credentials are picked up', async () => {
+    // The backoff gate runs before getToken(). Treating a 401 as a slow-down
+    // signal would stop us re-reading credentials the user or Claude may renew
+    // at any moment, stranding the gauge for up to the backoff cap.
+    let callCount = 0;
+    let tokenReads = 0;
+    const fetcher = createQuotaFetcher({
+      cacheTtlMs: 10,
+      backoffBaseMs: 10_000,
+      getAccessToken: () => { tokenReads++; return `tok-${tokenReads}`; },
+    });
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      callCount++;
+      if (callCount === 1) return { ok: false, status: 401, headers: { get: () => null } };
+      return { ok: true, json: async () => ({ five_hour: { utilization: 11 } }) };
+    };
+
+    try {
+      const r1 = await fetcher.fetchQuota();
+      expect(r1.error).to.equal('http_401');
+      await new Promise(r => setTimeout(r, 25));
+      const r2 = await fetcher.fetchQuota();
+      expect(r2.available).to.be.true;
+      expect(tokenReads).to.equal(2);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
   it('returns unavailable when no credentials', async () => {
     const fetcher = createQuotaFetcher({
       getAccessToken: () => null,
