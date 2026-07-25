@@ -110,6 +110,179 @@ describe('createQuotaFetcher', () => {
     }
   });
 
+  it('backs off instead of re-hitting upstream while rate limited', async () => {
+    // Regression: cached is only assigned on success, and the TTL gate requires
+    // a truthy cache, so a cold 429 made EVERY request bypass the cache and hit
+    // upstream again — the harder you are rate limited, the harder you retry.
+    let callCount = 0;
+    const fetcher = createQuotaFetcher({
+      cacheTtlMs: 50,
+      backoffBaseMs: 10_000,
+      getAccessToken: () => 'mock-token',
+    });
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      callCount++;
+      return { ok: false, status: 429, headers: { get: () => null } };
+    };
+
+    try {
+      const r1 = await fetcher.fetchQuota();
+      const r2 = await fetcher.fetchQuota();
+      const r3 = await fetcher.fetchQuota();
+      expect(r1.error).to.equal('rate_limited');
+      expect(r2.error).to.equal('rate_limited');
+      expect(r3.error).to.equal('rate_limited');
+      expect(callCount).to.equal(1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('retries upstream once the backoff window expires', async () => {
+    let callCount = 0;
+    const fetcher = createQuotaFetcher({
+      cacheTtlMs: 50,
+      backoffBaseMs: 40,
+      getAccessToken: () => 'mock-token',
+    });
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      callCount++;
+      if (callCount === 1) return { ok: false, status: 429, headers: { get: () => null } };
+      return { ok: true, json: async () => ({ five_hour: { utilization: 7 } }) };
+    };
+
+    try {
+      const r1 = await fetcher.fetchQuota();
+      expect(r1.error).to.equal('rate_limited');
+      await new Promise(r => setTimeout(r, 70));
+      const r2 = await fetcher.fetchQuota();
+      expect(r2.available).to.be.true;
+      expect(r2.five_hour.utilization).to.equal(7);
+      expect(callCount).to.equal(2);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('grows the backoff window on consecutive failures', async () => {
+    let callCount = 0;
+    const fetcher = createQuotaFetcher({
+      cacheTtlMs: 10,
+      backoffBaseMs: 40,
+      getAccessToken: () => 'mock-token',
+    });
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      callCount++;
+      return { ok: false, status: 429, headers: { get: () => null } };
+    };
+
+    try {
+      await fetcher.fetchQuota();                       // call 1, backoff ~40ms
+      await new Promise(r => setTimeout(r, 60));
+      await fetcher.fetchQuota();                       // call 2, backoff ~80ms
+      await new Promise(r => setTimeout(r, 60));
+      await fetcher.fetchQuota();                       // still inside the 80ms window
+      expect(callCount).to.equal(2);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('honours a retry-after header when upstream supplies one', async () => {
+    let callCount = 0;
+    const fetcher = createQuotaFetcher({
+      cacheTtlMs: 10,
+      backoffBaseMs: 10,
+      getAccessToken: () => 'mock-token',
+    });
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      callCount++;
+      return { ok: false, status: 429, headers: { get: (h) => (h === 'retry-after' ? '30' : null) } };
+    };
+
+    try {
+      await fetcher.fetchQuota();
+      await new Promise(r => setTimeout(r, 40));  // past backoffBaseMs, inside retry-after
+      await fetcher.fetchQuota();
+      expect(callCount).to.equal(1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('clears the backoff after a successful fetch', async () => {
+    let callCount = 0;
+    const fetcher = createQuotaFetcher({
+      cacheTtlMs: 10,
+      backoffBaseMs: 30,
+      getAccessToken: () => 'mock-token',
+    });
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      callCount++;
+      if (callCount <= 2) return { ok: false, status: 429, headers: { get: () => null } };
+      return { ok: true, json: async () => ({ five_hour: { utilization: 3 } }) };
+    };
+
+    try {
+      await fetcher.fetchQuota();                  // fail 1
+      await new Promise(r => setTimeout(r, 45));
+      await fetcher.fetchQuota();                  // fail 2 -> backoff would now be ~60ms
+      await new Promise(r => setTimeout(r, 75));
+      const ok = await fetcher.fetchQuota();        // success, resets counter
+      expect(ok.available).to.be.true;
+      await new Promise(r => setTimeout(r, 20));    // past the 10ms cache TTL
+      globalThis.fetch = async () => {
+        callCount++;
+        return { ok: false, status: 429, headers: { get: () => null } };
+      };
+      await fetcher.fetchQuota();                   // fails again, but counter restarted
+      expect(callCount).to.equal(4);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('does not back off on auth failures, so renewed credentials are picked up', async () => {
+    // The backoff gate runs before getToken(). Treating a 401 as a slow-down
+    // signal would stop us re-reading credentials the user or Claude may renew
+    // at any moment, stranding the gauge for up to the backoff cap.
+    let callCount = 0;
+    let tokenReads = 0;
+    const fetcher = createQuotaFetcher({
+      cacheTtlMs: 10,
+      backoffBaseMs: 10_000,
+      getAccessToken: () => { tokenReads++; return `tok-${tokenReads}`; },
+    });
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      callCount++;
+      if (callCount === 1) return { ok: false, status: 401, headers: { get: () => null } };
+      return { ok: true, json: async () => ({ five_hour: { utilization: 11 } }) };
+    };
+
+    try {
+      const r1 = await fetcher.fetchQuota();
+      expect(r1.error).to.equal('http_401');
+      await new Promise(r => setTimeout(r, 25));
+      const r2 = await fetcher.fetchQuota();
+      expect(r2.available).to.be.true;
+      expect(tokenReads).to.equal(2);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
   it('returns unavailable when no credentials', async () => {
     const fetcher = createQuotaFetcher({
       getAccessToken: () => null,

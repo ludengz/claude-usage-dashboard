@@ -7,6 +7,7 @@ import { calculateRecordCost } from './pricing.js';
 import { sanitizeMachineName } from './sync.js';
 
 const MAX_HISTORY = 52;
+const CYCLE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Normalize a cycle's resets_at to hour precision for use as a dedup key.
@@ -14,11 +15,15 @@ const MAX_HISTORY = 52;
  * so raw strings cannot be used for grouping.
  */
 function cyclePeriodKey(cycle) {
-  const d = new Date(cycle.resets_at);
-  // Round in UTC: local-time rounding diverges across machines in
-  // half-hour-offset timezones (UTC+5:30 etc.), breaking cross-machine dedup.
-  d.setUTCMinutes(0, 0, 0);
-  return d.toISOString();
+  // Round to the NEAREST hour, not down to it. Flooring split a cycle in two
+  // whenever the API's jitter straddled an hour boundary: 03:59:59 floors to
+  // hour 3 and 04:00:00 to hour 4, one second apart but two different keys.
+  // Epoch arithmetic rounds in UTC by construction, so this is also immune to
+  // the half-hour-offset timezones (UTC+5:30 etc.) that would break dedup
+  // between machines if we rounded in local time.
+  const HOUR_MS = 60 * 60 * 1000;
+  const t = new Date(cycle.resets_at).getTime();
+  return new Date(Math.round(t / HOUR_MS) * HOUR_MS).toISOString();
 }
 
 /**
@@ -124,6 +129,98 @@ export function computeCycleData(records, quotaData) {
 }
 
 /**
+ * Strip figures that only the quota API can supply. Backfilled cycles get their
+ * tokens and cost from the logs, but utilization is unrecoverable — the API only
+ * ever reports the window that is current when you ask — so anything derived
+ * from it must be null rather than a plausible-looking zero.
+ */
+function withUnknownUtilization(cycleData) {
+  const blank = d => ({
+    ...d,
+    utilization: null,
+    projectedTokensAt100: null,
+    projectedCostAt100: null,
+  });
+  return {
+    overall: blank(cycleData.overall),
+    models: {
+      opus: blank(cycleData.models.opus),
+      sonnet: blank(cycleData.models.sonnet),
+    },
+  };
+}
+
+/**
+ * Synthesize the cycles that elapsed between the last observed cycle and the one
+ * now current.
+ *
+ * History is otherwise built purely by observation: each update archives only
+ * the single cycle it was tracking, so every cycle that rolled over while the
+ * dashboard was down — or while quota fetches were failing — left a permanent
+ * hole no later run could fill.
+ *
+ * Boundaries are walked BACKWARD from the newly observed reset. The reset time
+ * drifts (one real gap spanned 50.21 days, or 7.17 nominal cycles), so anchoring
+ * on the newest known value keeps recent boundaries exact and pushes the
+ * residual onto the oldest synthesized cycle, whose start is clamped to the
+ * previous cycle's reset so the two cannot double-count records. A residual
+ * shorter than half a cycle is absorbed rather than emitted as its own stub.
+ */
+function synthesizeGapCycles(previousCycle, newResetsAt, allRecords) {
+  const prevEnd = new Date(previousCycle.resets_at).getTime();
+  const ends = [];
+  let cappedOut = false;
+
+  for (let end = newResetsAt.getTime() - CYCLE_MS; end - prevEnd > CYCLE_MS / 2; end -= CYCLE_MS) {
+    if (ends.length >= MAX_HISTORY) {
+      cappedOut = true;
+      break;
+    }
+    ends.push(end);
+  }
+
+  return ends.map((end, i) => {
+    // Start the oldest emitted cycle at the previous reset so the residual — the
+    // sub-half-cycle remainder the loop stops before emitting — is absorbed
+    // rather than orphaned. A 50.21-day gap walks back to an oldest end 8.21
+    // days past prevEnd; without this its start would sit at prevEnd + 1.21
+    // days and that window's usage would vanish. Skipped when the cap cut the
+    // walk short, since the oldest emitted cycle is then nowhere near prevEnd.
+    const absorbsResidual = i === ends.length - 1 && !cappedOut;
+    const startIso = new Date(absorbsResidual ? prevEnd : end - CYCLE_MS).toISOString();
+    const endIso = new Date(end).toISOString();
+    const records = filterByDateRange(allRecords, startIso, endIso);
+    return {
+      resets_at: endIso,
+      start: startIso,
+      lastUpdated: new Date().toISOString(),
+      backfilled: true,
+      ...withUnknownUtilization(computeCycleData(records, {})),
+    };
+  });
+}
+
+/**
+ * Fill gaps that already exist between stored history entries.
+ *
+ * synthesizeGapCycles only covers the span between the cycle being archived and
+ * the one becoming current, so holes sitting between two older entries — the
+ * ones a long outage already left behind — are never looked at. This walks the
+ * stored timeline and repairs them, which is what makes existing snapshots heal
+ * rather than merely stop getting worse.
+ *
+ * Cheap once healed: a gapless timeline reads no records at all.
+ */
+function backfillHistoryGaps(history, allRecords) {
+  const sorted = [...history].sort((a, b) => new Date(b.resets_at) - new Date(a.resets_at));
+  const filled = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    filled.push(...synthesizeGapCycles(sorted[i + 1], new Date(sorted[i].resets_at), allRecords));
+  }
+  return filled;
+}
+
+/**
  * Update the quota cycle snapshot file for this machine.
  * Called after each successful quota API fetch.
  *
@@ -155,20 +252,34 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
     snapshot = { schemaVersion: 1, machineName, currentCycle: null, history: [] };
   }
 
+  // Dedupe on every write, not just on a cycle switch, so snapshots already
+  // carrying duplicates from the old hour-floored key heal themselves.
+  snapshot.history = deduplicateHistory(snapshot.history || []);
+
   // Compare normalized period keys to detect actual cycle boundary changes.
   // Uses hour-precision keys to tolerate varying sub-second timestamps from the API.
+  const allRecords = parseLogDirectory(logBaseDir);
+
   const storedKey = snapshot.currentCycle ? cyclePeriodKey(snapshot.currentCycle) : null;
   const newKey = cyclePeriodKey({ resets_at: resetsAt });
   if (snapshot.currentCycle && storedKey !== newKey) {
     snapshot.history.unshift(snapshot.currentCycle);
-    snapshot.history = deduplicateHistory(snapshot.history);
-    if (snapshot.history.length > MAX_HISTORY) {
-      snapshot.history = snapshot.history.slice(0, MAX_HISTORY);
+    for (const gap of synthesizeGapCycles(snapshot.currentCycle, rawResetsAt, allRecords)) {
+      snapshot.history.unshift(gap);
     }
+    snapshot.history = deduplicateHistory(snapshot.history);
     snapshot.currentCycle = null;
   }
 
-  const allRecords = parseLogDirectory(logBaseDir);
+  // Repair holes an earlier outage already left between stored entries, then
+  // trim. Runs on every write, but costs nothing once the timeline is gapless.
+  snapshot.history = deduplicateHistory(
+    snapshot.history.concat(backfillHistoryGaps(snapshot.history, allRecords))
+  );
+  if (snapshot.history.length > MAX_HISTORY) {
+    snapshot.history = snapshot.history.slice(0, MAX_HISTORY);
+  }
+
   const cycleRecords = filterByDateRange(allRecords, start, resetsAt);
   const cycleData = computeCycleData(cycleRecords, quotaData);
 
@@ -281,14 +392,25 @@ function mergeSamePeriodCycles(cycles) {
     new Date(a.lastUpdated) > new Date(b.lastUpdated) ? a : b
   );
 
+  // Utilization exists only in the quota API's answer, and a backfilled entry
+  // has none. Its lastUpdated is the moment of synthesis, so it always wins a
+  // recency contest and would discard a real observation another machine
+  // recorded for the same period. Take API-only metrics from an observed entry
+  // whenever one exists, regardless of timestamps.
+  const observed = cycles.filter(c => !c.backfilled);
+  const utilSource = observed.length
+    ? observed.reduce((a, b) => (new Date(a.lastUpdated) > new Date(b.lastUpdated) ? a : b))
+    : mostRecent;
+
   return {
     resets_at: mostRecent.resets_at,
     start: mostRecent.start,
     lastUpdated: mostRecent.lastUpdated,
-    overall: mergeMetrics(cycles.map(c => c.overall), mostRecent.overall.utilization),
+    ...(observed.length === 0 ? { backfilled: true } : {}),
+    overall: mergeMetrics(cycles.map(c => c.overall), utilSource.overall?.utilization ?? null),
     models: {
-      opus: mergeMetrics(cycles.map(c => c.models.opus), mostRecent.models?.opus?.utilization || 0),
-      sonnet: mergeMetrics(cycles.map(c => c.models.sonnet), mostRecent.models?.sonnet?.utilization || 0),
+      opus: mergeMetrics(cycles.map(c => c.models.opus), utilSource.models?.opus?.utilization ?? null),
+      sonnet: mergeMetrics(cycles.map(c => c.models.sonnet), utilSource.models?.sonnet?.utilization ?? null),
     },
   };
 }

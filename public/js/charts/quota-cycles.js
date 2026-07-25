@@ -190,7 +190,7 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${label}</td>
-      <td class="align-right">${d.utilization.toFixed(1)}%</td>
+      <td class="align-right"${c.backfilled ? ' title="Reconstructed from local logs. Utilization is unknown: the quota API only reports the window that is current when asked."' : ''}>${d.utilization == null ? '—' : `${d.utilization.toFixed(1)}%`}</td>
       <td class="align-right">${fmt(t.input)}</td>
       <td class="align-right">${fmt(t.output)}</td>
       <td class="align-right">${fmt(t.cacheRead)}</td>

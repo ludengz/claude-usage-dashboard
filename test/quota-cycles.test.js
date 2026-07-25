@@ -106,6 +106,218 @@ describe('updateQuotaCycleSnapshot', () => {
     return path.join(tmpDir, 'logs');
   }
 
+  it('treats resets_at jitter across an hour boundary as the same cycle', () => {
+    // The API returns resets_at with a second or two of jitter. Flooring to the
+    // hour gave 03:59:59 (hour 3) and 04:00:00 (hour 4) different keys, so a
+    // single cycle was archived as two. The real on-disk snapshot had exactly
+    // this: two history entries for the 2026-07-11 cycle, one second apart.
+    const logDir = makeLogDir([
+      { timestamp: '2026-07-06T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 100, cache_creation_tokens: 50 },
+    ]);
+    const quota = resetsAt => ({
+      available: true,
+      seven_day: { utilization: 14, resets_at: resetsAt },
+      seven_day_sonnet: { utilization: 14 },
+    });
+
+    updateQuotaCycleSnapshot(quota('2026-07-11T03:59:59.000Z'), logDir, 'test-machine', tmpDir);
+    updateQuotaCycleSnapshot(quota('2026-07-11T04:00:00.000Z'), logDir, 'test-machine', tmpDir);
+
+    const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'quota-cycles-test-machine.json'), 'utf-8'));
+    expect(data.history).to.have.length(0);
+    expect(data.currentCycle.resets_at).to.equal('2026-07-11T04:00:00.000Z');
+  });
+
+  it('collapses history entries already duplicated by the old hour-floored key', () => {
+    const logDir = makeLogDir([
+      { timestamp: '2026-07-06T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 100, cache_creation_tokens: 50 },
+    ]);
+    const filePath = path.join(tmpDir, 'quota-cycles-test-machine.json');
+    fs.writeFileSync(filePath, JSON.stringify({
+      schemaVersion: 1,
+      machineName: 'test-machine',
+      currentCycle: null,
+      history: [
+        { resets_at: '2026-07-11T04:00:00.000Z', start: '2026-07-04T04:00:00.000Z', lastUpdated: '2026-07-06T07:24:20.993Z', overall: { utilization: 15, actualTokens: 2044882 } },
+        { resets_at: '2026-07-11T03:59:59.000Z', start: '2026-07-04T03:59:59.000Z', lastUpdated: '2026-07-06T06:25:38.699Z', overall: { utilization: 14, actualTokens: 1957471 } },
+      ],
+    }, null, 2));
+
+    updateQuotaCycleSnapshot({
+      available: true,
+      seven_day: { utilization: 20, resets_at: '2026-07-18T04:00:00.000Z' },
+      seven_day_sonnet: { utilization: 20 },
+    }, logDir, 'test-machine', tmpDir);
+
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    const july11 = data.history.filter(h => h.resets_at.startsWith('2026-07-11'));
+    expect(july11).to.have.length(1);
+    // Keeps the more recently updated of the pair
+    expect(july11[0].overall.utilization).to.equal(15);
+  });
+
+  it('backfills cycles that elapsed while nothing was observing', () => {
+    // History was built purely by observation: each update archived only the
+    // single cycle it was tracking, so every cycle that rolled over while the
+    // dashboard was down left a permanent hole. The real snapshot had three
+    // such holes, the largest spanning six cycles.
+    const logDir = makeLogDir([
+      { timestamp: '2026-06-16T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 0, cache_creation_tokens: 0 },
+      { timestamp: '2026-06-23T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 2000, output_tokens: 700, cache_read_tokens: 0, cache_creation_tokens: 0 },
+      { timestamp: '2026-06-30T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 3000, output_tokens: 900, cache_read_tokens: 0, cache_creation_tokens: 0 },
+    ]);
+    const filePath = path.join(tmpDir, 'quota-cycles-test-machine.json');
+    fs.writeFileSync(filePath, JSON.stringify({
+      schemaVersion: 1,
+      machineName: 'test-machine',
+      currentCycle: {
+        resets_at: '2026-06-13T04:00:00.000Z',
+        start: '2026-06-06T04:00:00.000Z',
+        lastUpdated: '2026-06-10T14:10:07.554Z',
+        overall: { utilization: 10, actualTokens: 5226234 },
+      },
+      history: [],
+    }, null, 2));
+
+    updateQuotaCycleSnapshot({
+      available: true,
+      seven_day: { utilization: 14, resets_at: '2026-07-11T04:00:00.000Z' },
+      seven_day_sonnet: { utilization: 14 },
+    }, logDir, 'test-machine', tmpDir);
+
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    const ends = data.history.map(h => h.resets_at).sort();
+    // The observed 6/13 cycle plus the three that rolled over unobserved
+    expect(ends).to.deep.equal([
+      '2026-06-13T04:00:00.000Z',
+      '2026-06-20T04:00:00.000Z',
+      '2026-06-27T04:00:00.000Z',
+      '2026-07-04T04:00:00.000Z',
+    ]);
+
+    const filled = data.history.filter(h => h.backfilled);
+    expect(filled).to.have.length(3);
+    // Token totals come from the logs; utilization cannot be recovered because
+    // the quota API only ever reports the current window.
+    for (const c of filled) {
+      expect(c.overall.utilization).to.equal(null);
+      expect(c.overall.projectedTokensAt100).to.equal(null);
+    }
+    const jun20 = data.history.find(h => h.resets_at === '2026-06-20T04:00:00.000Z');
+    expect(jun20.overall.actualTokens).to.equal(1500);   // the 6/16 record
+  });
+
+  it('does not backfill across an ordinary single-cycle rollover', () => {
+    const logDir = makeLogDir([
+      { timestamp: '2026-07-06T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 0, cache_creation_tokens: 0 },
+    ]);
+    const filePath = path.join(tmpDir, 'quota-cycles-test-machine.json');
+    fs.writeFileSync(filePath, JSON.stringify({
+      schemaVersion: 1,
+      machineName: 'test-machine',
+      currentCycle: {
+        resets_at: '2026-07-11T04:00:00.000Z',
+        start: '2026-07-04T04:00:00.000Z',
+        lastUpdated: '2026-07-06T07:24:20.993Z',
+        overall: { utilization: 15, actualTokens: 2044882 },
+      },
+      history: [],
+    }, null, 2));
+
+    updateQuotaCycleSnapshot({
+      available: true,
+      seven_day: { utilization: 5, resets_at: '2026-07-18T04:00:00.000Z' },
+      seven_day_sonnet: { utilization: 5 },
+    }, logDir, 'test-machine', tmpDir);
+
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    expect(data.history).to.have.length(1);
+    expect(data.history.some(h => h.backfilled)).to.be.false;
+  });
+
+  it('repairs holes that already exist between stored history entries', () => {
+    // Backfilling only the span around the current rollover leaves older holes
+    // untouched, so a snapshot damaged by a past outage would stop getting worse
+    // without ever getting better. The real file had three such holes.
+    const logDir = makeLogDir([
+      { timestamp: '2026-06-16T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 0, cache_creation_tokens: 0 },
+    ]);
+    const filePath = path.join(tmpDir, 'quota-cycles-test-machine.json');
+    fs.writeFileSync(filePath, JSON.stringify({
+      schemaVersion: 1,
+      machineName: 'test-machine',
+      currentCycle: {
+        resets_at: '2026-07-18T04:00:00.000Z',
+        start: '2026-07-11T04:00:00.000Z',
+        lastUpdated: '2026-07-12T00:00:00.000Z',
+        overall: { utilization: 5, actualTokens: 1 },
+      },
+      history: [
+        { resets_at: '2026-07-11T04:00:00.000Z', start: '2026-07-04T04:00:00.000Z', lastUpdated: '2026-07-06T07:24:20.993Z', overall: { utilization: 15, actualTokens: 2044882 } },
+        { resets_at: '2026-06-13T04:00:00.000Z', start: '2026-06-06T04:00:00.000Z', lastUpdated: '2026-06-10T14:10:07.554Z', overall: { utilization: 10, actualTokens: 5226234 } },
+      ],
+    }, null, 2));
+
+    updateQuotaCycleSnapshot({
+      available: true,
+      seven_day: { utilization: 5, resets_at: '2026-07-18T04:00:00.000Z' },
+      seven_day_sonnet: { utilization: 5 },
+    }, logDir, 'test-machine', tmpDir);
+
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    expect(data.history.map(h => h.resets_at).sort()).to.deep.equal([
+      '2026-06-13T04:00:00.000Z',
+      '2026-06-20T04:00:00.000Z',
+      '2026-06-27T04:00:00.000Z',
+      '2026-07-04T04:00:00.000Z',
+      '2026-07-11T04:00:00.000Z',
+    ]);
+    expect(data.history.filter(h => h.backfilled)).to.have.length(3);
+    // Real token data from the logs, but utilization stays unknown
+    const jun20 = data.history.find(h => h.resets_at === '2026-06-20T04:00:00.000Z');
+    expect(jun20.overall.actualTokens).to.equal(1500);
+    expect(jun20.overall.utilization).to.equal(null);
+    // Observed entries keep their real utilization
+    expect(data.history.find(h => h.resets_at === '2026-07-11T04:00:00.000Z').overall.utilization).to.equal(15);
+  });
+
+  it('absorbs the reset-time drift residual into the oldest synthesized cycle', () => {
+    // A gap that is not a whole number of cycles leaves a residual shorter than
+    // half a cycle. Walking backward stops before emitting it, so unless the
+    // oldest emitted cycle starts at the previous reset that window — and every
+    // record in it — is orphaned. The real 4/23 -> 6/13 gap spans 50.21 days.
+    const logDir = makeLogDir([
+      { timestamp: '2026-04-24T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 4000, output_tokens: 100, cache_read_tokens: 0, cache_creation_tokens: 0 },
+    ]);
+    const filePath = path.join(tmpDir, 'quota-cycles-test-machine.json');
+    fs.writeFileSync(filePath, JSON.stringify({
+      schemaVersion: 1,
+      machineName: 'test-machine',
+      currentCycle: {
+        resets_at: '2026-04-23T23:00:01.000Z',
+        start: '2026-04-16T23:00:01.000Z',
+        lastUpdated: '2026-04-17T05:51:43.386Z',
+        overall: { utilization: 4, actualTokens: 1593642 },
+      },
+      history: [],
+    }, null, 2));
+
+    updateQuotaCycleSnapshot({
+      available: true,
+      seven_day: { utilization: 10, resets_at: '2026-06-13T04:00:00.000Z' },
+      seven_day_sonnet: { utilization: 10 },
+    }, logDir, 'test-machine', tmpDir);
+
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    const backfilled = data.history.filter(h => h.backfilled)
+      .sort((a, b) => new Date(a.resets_at) - new Date(b.resets_at));
+    // Oldest synthesized cycle reaches back to the previous reset, not to a
+    // whole-cycle boundary that would leave 1.21 days uncovered.
+    expect(backfilled[0].start).to.equal('2026-04-23T23:00:01.000Z');
+    // The 4/24 record falls inside that residual and must be counted
+    expect(backfilled[0].overall.actualTokens).to.equal(4100);
+  });
+
   it('creates snapshot file on first run', () => {
     const logDir = makeLogDir([
       { timestamp: '2026-03-30T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 100, cache_creation_tokens: 50 },
@@ -358,6 +570,136 @@ describe('loadQuotaCycles', () => {
     // NOT 10000 + 8000 + 7000 = 25000 (which would double-count laptop's duplicate)
     expect(result.history).to.have.length(1);
     expect(result.history[0].overall.actualTokens).to.equal(10000 + 7000);
+  });
+});
+
+describe('cross-machine merge with backfilled cycles', () => {
+  let tmpDir;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qc-merge-')); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true }); });
+
+  const metrics = (util, tokens) => ({
+    utilization: util,
+    actualTokens: tokens,
+    actualCost: tokens / 1000,
+    projectedTokensAt100: null,
+    projectedCostAt100: null,
+    tokens: { input: tokens, output: 0, cacheRead: 0, cacheCreation: 0 },
+  });
+
+  function writeMachine(name, entry) {
+    fs.writeFileSync(path.join(tmpDir, `quota-cycles-${name}.json`), JSON.stringify({
+      schemaVersion: 1, machineName: name, currentCycle: null, history: [entry],
+    }));
+  }
+
+  it('keeps observed utilization when another machine backfilled the same period', () => {
+    // A backfilled entry's lastUpdated is the moment of synthesis, so it always
+    // wins the recency contest. Taking utilization from the winner would throw
+    // away the real figure the other machine actually recorded.
+    writeMachine('A', {
+      resets_at: '2026-06-20T04:00:00.000Z', start: '2026-06-13T04:00:00.000Z',
+      lastUpdated: '2026-06-18T00:00:00.000Z',
+      overall: metrics(42, 100),
+      models: { opus: metrics(0, 0), sonnet: metrics(42, 100) },
+    });
+    writeMachine('B', {
+      resets_at: '2026-06-20T04:00:00.000Z', start: '2026-06-13T04:00:00.000Z',
+      lastUpdated: '2026-07-25T00:00:00.000Z', backfilled: true,
+      overall: metrics(null, 50),
+      models: { opus: metrics(null, 0), sonnet: metrics(null, 50) },
+    });
+
+    const merged = loadQuotaCycles('A', null, tmpDir);
+    const cycle = merged.history.find(h => h.resets_at === '2026-06-20T04:00:00.000Z');
+    expect(cycle.overall.utilization).to.equal(42);
+    expect(cycle.models.sonnet.utilization).to.equal(42);
+    // Token totals still merge across machines
+    expect(cycle.overall.actualTokens).to.equal(150);
+    // No longer a purely synthetic period
+    expect(cycle.backfilled).to.be.undefined;
+  });
+
+  it('stays unknown when every machine only backfilled the period', () => {
+    writeMachine('A', {
+      resets_at: '2026-06-20T04:00:00.000Z', start: '2026-06-13T04:00:00.000Z',
+      lastUpdated: '2026-07-25T00:00:00.000Z', backfilled: true,
+      overall: metrics(null, 70),
+      models: { opus: metrics(null, 0), sonnet: metrics(null, 70) },
+    });
+    writeMachine('B', {
+      resets_at: '2026-06-20T04:00:00.000Z', start: '2026-06-13T04:00:00.000Z',
+      lastUpdated: '2026-07-25T01:00:00.000Z', backfilled: true,
+      overall: metrics(null, 30),
+      models: { opus: metrics(null, 0), sonnet: metrics(null, 30) },
+    });
+
+    const merged = loadQuotaCycles('A', null, tmpDir);
+    const cycle = merged.history.find(h => h.resets_at === '2026-06-20T04:00:00.000Z');
+    expect(cycle.overall.utilization).to.equal(null);
+    expect(cycle.overall.actualTokens).to.equal(100);
+    expect(cycle.backfilled).to.be.true;
+  });
+});
+
+describe('GET /api/quota-cycles with backfilled cycles', () => {
+  let app, server, baseUrl, tmpDir;
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qc-bf-api-'));
+    const logDir = path.join(tmpDir, 'logs');
+    const projectDir = path.join(logDir, '-Users-test-Workspace-testproject');
+    fs.mkdirSync(projectDir, { recursive: true });
+    const rec = (ts, input, output) => JSON.stringify({
+      type: 'assistant', sessionId: 's1', timestamp: ts,
+      message: { model: 'claude-sonnet-4-6', usage: { input_tokens: input, output_tokens: output, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    });
+    fs.writeFileSync(path.join(projectDir, 'session.jsonl'), [
+      rec('2026-06-16T10:00:00Z', 1000, 500),   // mid-window of the older cycle
+      rec('2026-06-20T02:00:00Z', 300, 0),      // two hours BEFORE the shared reset
+      rec('2026-06-23T10:00:00Z', 2000, 700),   // mid-window of the newer cycle
+    ].join('\n'));
+
+    const blank = { utilization: null, actualTokens: 0, actualCost: 0, projectedTokensAt100: null, projectedCostAt100: null, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 } };
+    fs.writeFileSync(path.join(tmpDir, 'quota-cycles-test.json'), JSON.stringify({
+      schemaVersion: 1, machineName: 'test', currentCycle: null,
+      history: [
+        { resets_at: '2026-06-27T04:00:00.000Z', start: '2026-06-20T04:00:00.000Z', lastUpdated: '2026-07-25T00:00:00Z', backfilled: true, overall: { ...blank }, models: { opus: { ...blank }, sonnet: { ...blank } } },
+        { resets_at: '2026-06-20T04:00:00.000Z', start: '2026-06-13T04:00:00.000Z', lastUpdated: '2026-07-25T00:00:00Z', backfilled: true, overall: { ...blank }, models: { opus: { ...blank }, sonnet: { ...blank } } },
+      ],
+    }));
+
+    app = express();
+    app.use('/api', createApiRouter(logDir, { cacheTtlMs: 0, machineName: 'test', snapshotDir: tmpDir }));
+    await new Promise(resolve => { server = app.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve(); }); });
+  });
+
+  after(async () => {
+    await new Promise(resolve => server.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('serves unknown utilization as null rather than a confident zero', async () => {
+    const res = await fetch(`${baseUrl}/api/quota-cycles`);
+    const data = await res.json();
+    for (const cycle of data.history) {
+      expect(cycle.overall.utilization).to.equal(null);
+      expect(cycle.overall.projectedTokensAt100).to.equal(null);
+      expect(cycle.overall.projectedCostAt100).to.equal(null);
+    }
+  });
+
+  it('keeps exact windows so adjacent repaired cycles do not overlap', async () => {
+    const res = await fetch(`${baseUrl}/api/quota-cycles`);
+    const data = await res.json();
+    const older = data.history.find(h => h.resets_at === '2026-06-20T04:00:00.000Z');
+    const newer = data.history.find(h => h.resets_at === '2026-06-27T04:00:00.000Z');
+
+    // The 06/20 02:00Z record belongs to the older cycle only. Rounding to
+    // local dates would put that day inside both windows and count it twice.
+    expect(older.overall.actualTokens).to.equal(1800);   // 1500 + 300
+    expect(newer.overall.actualTokens).to.equal(2700);
+    expect(older.overall.actualTokens + newer.overall.actualTokens).to.equal(4500);
   });
 });
 
