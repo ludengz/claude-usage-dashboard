@@ -32,7 +32,13 @@ function labelFor(from, to) {
 
 export function initDatePicker(container, onChange) {
   let preset = localStorage.getItem('datePickerPreset');
-  if (!PRESETS[preset]) preset = 'quota';
+  if (!PRESETS[preset]) {
+    // Upgrade path: before presets existed the range was two stored dates.
+    // Defaulting those users to "quota" would overwrite the range they chose
+    // on the very first load, so keep their dates and call it what it is.
+    const legacy = localStorage.getItem('datePickerFrom') && localStorage.getItem('datePickerTo');
+    preset = legacy ? 'custom' : 'quota';
+  }
   let quotaWindow = null;
   let current = null;
 
@@ -65,8 +71,11 @@ export function initDatePicker(container, onChange) {
     // The quota window arrives with the first /api/quota response. Until then
     // fall back to a week so the dashboard paints immediately instead of
     // waiting on a round-trip to Anthropic.
-    if (preset === 'quota') return quotaWindow || { from: fmt(daysAgo(7)), to: fmt(new Date()) };
-    return { from: fmt(daysAgo(PRESETS[preset].days)), to: fmt(new Date()) };
+    if (preset === 'quota') return quotaWindow || { from: fmt(daysAgo(6)), to: fmt(new Date()) };
+    // days - 1, because filterByDateRange includes both endpoints: it expands
+    // `to` to 23:59:59.999, so today-7 → today would span eight calendar days
+    // and quietly inflate every figure a "Last 7 days" preset reports.
+    return { from: fmt(daysAgo(PRESETS[preset].days - 1)), to: fmt(new Date()) };
   }
 
   function apply({ emit = true } = {}) {
