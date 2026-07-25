@@ -1,3 +1,5 @@
+import { modelDisplayName } from '../model-meta.js';
+
 function formatTokens(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
@@ -10,19 +12,8 @@ const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
-const MODEL_DISPLAY = {
-  'claude-fable-5': 'fable 5',
-  'claude-opus-4-6': 'opus 4.6',
-  'claude-opus-4-7': 'opus 4.7',
-  'claude-opus-4-8': 'opus 4.8',
-  'claude-sonnet-5': 'sonnet 5',
-  'claude-sonnet-4-6': 'sonnet 4.6',
-  'claude-haiku-4-5': 'haiku 4.5',
-  'claude-haiku-4-5-20251001': 'haiku 4.5',
-};
-
 function modelTag(model) {
-  const shortName = MODEL_DISPLAY[model] || model.replace('claude-', '').replace(/-(\d+)-(\d+)/, ' $1.$2');
+  const shortName = modelDisplayName(model);
   let cls = 'tag-model-sonnet';
   if (model.includes('fable')) cls = 'tag-model-fable';
   else if (model.includes('opus')) cls = 'tag-model-opus';

@@ -5,6 +5,7 @@ import { MODEL_PRICING, PLAN_DEFAULTS, calculateRecordCost, getModelPricing } fr
 describe('MODEL_PRICING', () => {
   it('has pricing for known models', () => {
     expect(MODEL_PRICING['claude-fable-5']).to.exist;
+    expect(MODEL_PRICING['claude-opus-5']).to.exist;
     expect(MODEL_PRICING['claude-opus-4-6']).to.exist;
     expect(MODEL_PRICING['claude-opus-4-7']).to.exist;
     expect(MODEL_PRICING['claude-opus-4-8']).to.exist;
@@ -23,6 +24,10 @@ describe('MODEL_PRICING', () => {
   it('prices Opus 4.8 identically to Opus 4.6/4.7', () => {
     expect(MODEL_PRICING['claude-opus-4-8']).to.deep.equal(MODEL_PRICING['claude-opus-4-6']);
     expect(MODEL_PRICING['claude-opus-4-8']).to.deep.equal(MODEL_PRICING['claude-opus-4-7']);
+  });
+
+  it('prices Opus 5 identically to the rest of the Opus tier', () => {
+    expect(MODEL_PRICING['claude-opus-5']).to.deep.equal(MODEL_PRICING['claude-opus-4-8']);
   });
 
   it('prices Sonnet 5 identically to Sonnet 4.6', () => {
@@ -75,6 +80,19 @@ describe('calculateRecordCost', () => {
     const cost = calculateRecordCost(record);
     // 300K * $10/M = $3.00 + 100K * $50/M = $5.00 + 500K * $1/M = $0.50 + 200K * $12.50/M = $2.50 = $11.00
     expect(cost).to.be.closeTo(11.00, 0.01);
+  });
+
+  it('calculates cost for Opus 5', () => {
+    const record = {
+      model: 'claude-opus-5',
+      input_tokens: 300000,
+      output_tokens: 100000,
+      cache_read_tokens: 500000,
+      cache_creation_tokens: 200000,
+    };
+    const cost = calculateRecordCost(record);
+    // 300K * $5/M = $1.50 + 100K * $25/M = $2.50 + 500K * $0.50/M = $0.25 + 200K * $6.25/M = $1.25 = $5.50
+    expect(cost).to.be.closeTo(5.50, 0.01);
   });
 
   it('resolves date-suffixed model ids to base pricing', () => {
