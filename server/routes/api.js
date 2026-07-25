@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import fs from 'fs';
 import os from 'os';
 import { parseLogDirectory, parseMultiMachineDirectory } from '../parser.js';
 import { syncLocalToShared } from '../sync.js';
@@ -236,12 +237,25 @@ export function createApiRouter(logBaseDir, options = {}) {
     res.json(info || { plan: null, subscriptionType: null, rateLimitTier: null });
   });
 
+  // Each top-level directory under the sync dir is one machine's log copy.
+  // Without a sync dir there is only this machine.
+  function countMachines() {
+    if (!options.syncDir) return 1;
+    try {
+      return fs.readdirSync(options.syncDir, { withFileTypes: true })
+        .filter(e => e.isDirectory()).length || 1;
+    } catch {
+      return 1;
+    }
+  }
+
   router.get('/status', (req, res) => {
     refreshRecords();
     res.json({
       record_count: cachedRecords.length,
       last_refreshed: lastRefreshed ? new Date(lastRefreshed).toISOString() : null,
       cache_ttl_ms: CACHE_TTL_MS,
+      machine_count: countMachines(),
     });
   });
 

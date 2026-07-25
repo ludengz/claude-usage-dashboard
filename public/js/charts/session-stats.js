@@ -1,25 +1,7 @@
 import { modelDisplayName } from '../model-meta.js';
+import { MIX, fmtTokens, fmtCost, escapeHtml } from '../theme.js';
 
-function formatTokens(n) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
-  return n.toString();
-}
-
-// Project and model names come straight from JSONL logs / directory names —
-// escape them before any innerHTML interpolation.
-const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-));
-
-function modelTag(model) {
-  const shortName = modelDisplayName(model);
-  let cls = 'tag-model-sonnet';
-  if (model.includes('fable')) cls = 'tag-model-fable';
-  else if (model.includes('opus')) cls = 'tag-model-opus';
-  else if (model.includes('haiku')) cls = 'tag-model-haiku';
-  return `<span class="tag ${cls}">${escapeHtml(shortName)}</span>`;
-}
+const BAR_MAX = 160;
 
 function formatDate(iso) {
   const d = new Date(iso);
@@ -29,9 +11,7 @@ function formatDate(iso) {
 
 function formatDuration(minutes) {
   if (minutes < 60) return `${minutes}m`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${h}h ${m}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 export function renderSessionTable(container, data, { onSort, onPageChange }) {
@@ -42,47 +22,55 @@ export function renderSessionTable(container, data, { onSort, onPageChange }) {
   const headerRow = document.createElement('tr');
 
   const columns = [
-    { key: 'date', label: 'Date & Time' },
+    { key: 'date', label: 'Started', sortKey: 'date' },
     { key: 'project', label: 'Project' },
-    { key: 'models', label: 'Model(s)' },
-    { key: 'input', label: 'Input', align: 'right' },
-    { key: 'output', label: 'Output', align: 'right' },
-    { key: 'cache_read', label: 'Cache Read', align: 'right' },
-    { key: 'cache_creation', label: 'Cache Write', align: 'right' },
-    { key: 'total', label: 'Total', align: 'right' },
-    { key: 'cost', label: 'API Cost', align: 'right' },
+    { key: 'models', label: 'Model' },
+    { key: 'mix', label: 'Size & mix' },
+    { key: 'total', label: 'Total', align: 'right', sortKey: 'tokens' },
+    { key: 'cost', label: 'API cost', align: 'right', sortKey: 'cost' },
     { key: 'duration', label: 'Duration', align: 'right' },
   ];
 
   for (const col of columns) {
     const th = document.createElement('th');
     th.textContent = col.label;
-    if (col.align) th.className = 'align-right';
-    if (['date', 'cost', 'total'].includes(col.key)) {
-      th.style.cursor = 'pointer';
-      th.addEventListener('click', () => {
-        const sortKey = col.key === 'total' ? 'tokens' : col.key;
-        onSort(sortKey);
-      });
+    if (col.align) th.classList.add('align-right');
+    if (col.sortKey) {
+      th.classList.add('sortable');
+      th.addEventListener('click', () => onSort(col.sortKey));
     }
     headerRow.appendChild(th);
   }
   thead.appendChild(headerRow);
   table.appendChild(thead);
 
+  // Bar length is relative to the largest session on this page — the mix is
+  // absolute, the length is comparative.
+  const maxTotal = Math.max(...data.sessions.map(s => s.total_tokens), 1);
+
   const tbody = document.createElement('tbody');
   for (const s of data.sessions) {
+    const sum = s.total_tokens || 1;
+    const barW = Math.max(3, Math.round((s.total_tokens / maxTotal) * BAR_MAX));
+    const seg = v => (v / sum) * 100;
+    const mixTitle = `cache read ${fmtTokens(s.cache_read_tokens)} · cache write ${fmtTokens(s.cache_creation_tokens)} · ` +
+      `input ${fmtTokens(s.input_tokens)} · output ${fmtTokens(s.output_tokens)}`;
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${formatDate(s.startTime)}</td>
-      <td><span class="tag tag-project">${escapeHtml(s.project)}</span></td>
-      <td>${s.models.map(modelTag).join(' ')}</td>
-      <td class="align-right" style="color:#60a5fa">${formatTokens(s.input_tokens)}</td>
-      <td class="align-right" style="color:#f97316">${formatTokens(s.output_tokens)}</td>
-      <td class="align-right" style="color:#4ade80">${formatTokens(s.cache_read_tokens)}</td>
-      <td class="align-right" style="color:#f59e0b">${formatTokens(s.cache_creation_tokens)}</td>
-      <td class="align-right" style="font-weight:600">${formatTokens(s.total_tokens)}</td>
-      <td class="align-right" style="color:#f59e0b;font-weight:600">$${s.estimated_cost_usd.toFixed(2)}</td>
+      <td class="name">${escapeHtml(s.project)}</td>
+      <td>${s.models.map(m => `<span class="tag">${escapeHtml(modelDisplayName(m))}</span>`).join('')}</td>
+      <td>
+        <div class="mix-bar" style="width:${barW}px" title="${escapeHtml(mixTitle)}">
+          <div style="width:${seg(s.cache_read_tokens)}%;background:${MIX.cacheRead}"></div>
+          <div style="width:${seg(s.cache_creation_tokens)}%;background:${MIX.cacheWrite}"></div>
+          <div style="width:${seg(s.input_tokens)}%;background:${MIX.input}"></div>
+          <div style="width:${seg(s.output_tokens)}%;background:${MIX.output}"></div>
+        </div>
+      </td>
+      <td class="align-right strong">${fmtTokens(s.total_tokens)}</td>
+      <td class="align-right cost">${fmtCost(s.estimated_cost_usd)}</td>
       <td class="align-right">${formatDuration(s.duration_minutes)}</td>
     `;
     tbody.appendChild(tr);
@@ -93,10 +81,9 @@ export function renderSessionTable(container, data, { onSort, onPageChange }) {
     const tfoot = document.createElement('tfoot');
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td colspan="3">Showing ${data.sessions.length} of ${data.pagination.total_sessions} sessions</td>
-      <td class="align-right" colspan="4"></td>
-      <td class="align-right">${formatTokens(data.totals.total_tokens)}</td>
-      <td class="align-right" style="color:#f59e0b">$${data.totals.estimated_cost_usd.toFixed(2)}</td>
+      <td class="muted" colspan="4">Showing ${data.sessions.length} of ${data.pagination.total_sessions} sessions</td>
+      <td class="align-right">${fmtTokens(data.totals.total_tokens)}</td>
+      <td class="align-right cost">${fmtCost(data.totals.estimated_cost_usd)}</td>
       <td></td>
     `;
     tfoot.appendChild(tr);
@@ -106,7 +93,7 @@ export function renderSessionTable(container, data, { onSort, onPageChange }) {
   container.appendChild(table);
 
   const pagEl = document.getElementById('session-pagination');
-  if (pagEl) pagEl.innerHTML = ''; // always clear — stale buttons survive when results shrink to one page
+  if (pagEl) pagEl.innerHTML = ''; // stale buttons survive when results shrink to one page
   if (pagEl && data.pagination && data.pagination.total_pages > 1) {
     for (let i = 1; i <= data.pagination.total_pages; i++) {
       const btn = document.createElement('button');

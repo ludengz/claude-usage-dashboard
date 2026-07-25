@@ -10,12 +10,12 @@ export function initPlanSelector(container, onChange) {
   let detectedPlan = null;
 
   container.innerHTML = `
-    <select id="plan-select">
+    <select id="plan-select" title="Subscription plan — double-click to enter a custom price">
       ${Object.entries(PLANS).map(([key, p]) =>
-        `<option value="${key}" ${key === saved ? 'selected' : ''}>${p.label} ($${p.price}/mo)</option>`
+        `<option value="${key}" ${key === saved ? 'selected' : ''}>${p.label} · $${p.price}/mo</option>`
       ).join('')}
     </select>
-    <input type="number" id="custom-price" placeholder="Custom $" value="${savedPrice}" style="width:80px;display:${savedPrice ? 'inline-block' : 'none'};">
+    <input type="number" id="custom-price" placeholder="Custom $" value="${savedPrice}" style="display:${savedPrice ? 'inline-block' : 'none'};">
   `;
 
   const select = container.querySelector('#plan-select');
@@ -46,7 +46,7 @@ export function initPlanSelector(container, onChange) {
     for (const opt of select.options) {
       const p = PLANS[opt.value];
       const suffix = opt.value === planKey ? ' ✓' : '';
-      opt.textContent = `${p.label} ($${p.price}/mo)${suffix}`;
+      opt.textContent = `${p.label} · $${p.price}/mo${suffix}`;
     }
   }
 

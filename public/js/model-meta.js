@@ -10,16 +10,19 @@ export function normalizeModelId(modelId) {
   return typeof modelId === 'string' ? modelId.replace(/-\d{8}$/, '') : modelId;
 }
 
+// Warm near-monochrome ramp ("Ledger"): the Opus family carries the accent
+// hue, Sonnet recedes into the neutral greys, Haiku takes the amber warning
+// tone. Colour is a family signal here, not decoration.
 export const MODEL_COLORS = {
-  'claude-fable-5': '#ec4899',
-  'claude-opus-5': '#4f46e5',
-  'claude-opus-4-8': '#7c3aed',
-  'claude-opus-4-7': '#a78bfa',
-  'claude-opus-4-6': '#8b5cf6',
-  'claude-sonnet-5': '#60a5fa',
-  'claude-sonnet-4-6': '#3b82f6',
-  'claude-sonnet-4-5': '#2563eb',
-  'claude-haiku-4-5': '#f59e0b',
+  'claude-fable-5': '#C25B4E',
+  'claude-opus-5': '#D97757',
+  'claude-opus-4-8': '#C2764F',
+  'claude-opus-4-7': '#B0765C',
+  'claude-opus-4-6': '#8A6350',
+  'claude-sonnet-5': '#C4BCAE',
+  'claude-sonnet-4-6': '#B8B0A3',
+  'claude-sonnet-4-5': '#8A8378',
+  'claude-haiku-4-5': '#C9A227',
 };
 
 export const MODEL_DISPLAY = {
@@ -34,7 +37,7 @@ export const MODEL_DISPLAY = {
   'claude-haiku-4-5': 'haiku 4.5',
 };
 
-export const UNKNOWN_MODEL_COLOR = '#64748b';
+export const UNKNOWN_MODEL_COLOR = '#57534A';
 
 export function modelColor(modelId) {
   return MODEL_COLORS[normalizeModelId(modelId)] || UNKNOWN_MODEL_COLOR;
