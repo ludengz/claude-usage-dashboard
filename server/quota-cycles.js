@@ -14,11 +14,15 @@ const MAX_HISTORY = 52;
  * so raw strings cannot be used for grouping.
  */
 function cyclePeriodKey(cycle) {
-  const d = new Date(cycle.resets_at);
-  // Round in UTC: local-time rounding diverges across machines in
-  // half-hour-offset timezones (UTC+5:30 etc.), breaking cross-machine dedup.
-  d.setUTCMinutes(0, 0, 0);
-  return d.toISOString();
+  // Round to the NEAREST hour, not down to it. Flooring split a cycle in two
+  // whenever the API's jitter straddled an hour boundary: 03:59:59 floors to
+  // hour 3 and 04:00:00 to hour 4, one second apart but two different keys.
+  // Epoch arithmetic rounds in UTC by construction, so this is also immune to
+  // the half-hour-offset timezones (UTC+5:30 etc.) that would break dedup
+  // between machines if we rounded in local time.
+  const HOUR_MS = 60 * 60 * 1000;
+  const t = new Date(cycle.resets_at).getTime();
+  return new Date(Math.round(t / HOUR_MS) * HOUR_MS).toISOString();
 }
 
 /**
@@ -154,6 +158,10 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
   } catch {
     snapshot = { schemaVersion: 1, machineName, currentCycle: null, history: [] };
   }
+
+  // Dedupe on every write, not just on a cycle switch, so snapshots already
+  // carrying duplicates from the old hour-floored key heal themselves.
+  snapshot.history = deduplicateHistory(snapshot.history || []);
 
   // Compare normalized period keys to detect actual cycle boundary changes.
   // Uses hour-precision keys to tolerate varying sub-second timestamps from the API.

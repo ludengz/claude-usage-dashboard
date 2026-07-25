@@ -106,6 +106,56 @@ describe('updateQuotaCycleSnapshot', () => {
     return path.join(tmpDir, 'logs');
   }
 
+  it('treats resets_at jitter across an hour boundary as the same cycle', () => {
+    // The API returns resets_at with a second or two of jitter. Flooring to the
+    // hour gave 03:59:59 (hour 3) and 04:00:00 (hour 4) different keys, so a
+    // single cycle was archived as two. The real on-disk snapshot had exactly
+    // this: two history entries for the 2026-07-11 cycle, one second apart.
+    const logDir = makeLogDir([
+      { timestamp: '2026-07-06T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 100, cache_creation_tokens: 50 },
+    ]);
+    const quota = resetsAt => ({
+      available: true,
+      seven_day: { utilization: 14, resets_at: resetsAt },
+      seven_day_sonnet: { utilization: 14 },
+    });
+
+    updateQuotaCycleSnapshot(quota('2026-07-11T03:59:59.000Z'), logDir, 'test-machine', tmpDir);
+    updateQuotaCycleSnapshot(quota('2026-07-11T04:00:00.000Z'), logDir, 'test-machine', tmpDir);
+
+    const data = JSON.parse(fs.readFileSync(path.join(tmpDir, 'quota-cycles-test-machine.json'), 'utf-8'));
+    expect(data.history).to.have.length(0);
+    expect(data.currentCycle.resets_at).to.equal('2026-07-11T04:00:00.000Z');
+  });
+
+  it('collapses history entries already duplicated by the old hour-floored key', () => {
+    const logDir = makeLogDir([
+      { timestamp: '2026-07-06T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 100, cache_creation_tokens: 50 },
+    ]);
+    const filePath = path.join(tmpDir, 'quota-cycles-test-machine.json');
+    fs.writeFileSync(filePath, JSON.stringify({
+      schemaVersion: 1,
+      machineName: 'test-machine',
+      currentCycle: null,
+      history: [
+        { resets_at: '2026-07-11T04:00:00.000Z', start: '2026-07-04T04:00:00.000Z', lastUpdated: '2026-07-06T07:24:20.993Z', overall: { utilization: 15, actualTokens: 2044882 } },
+        { resets_at: '2026-07-11T03:59:59.000Z', start: '2026-07-04T03:59:59.000Z', lastUpdated: '2026-07-06T06:25:38.699Z', overall: { utilization: 14, actualTokens: 1957471 } },
+      ],
+    }, null, 2));
+
+    updateQuotaCycleSnapshot({
+      available: true,
+      seven_day: { utilization: 20, resets_at: '2026-07-18T04:00:00.000Z' },
+      seven_day_sonnet: { utilization: 20 },
+    }, logDir, 'test-machine', tmpDir);
+
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    const july11 = data.history.filter(h => h.resets_at.startsWith('2026-07-11'));
+    expect(july11).to.have.length(1);
+    // Keeps the more recently updated of the pair
+    expect(july11[0].overall.utilization).to.equal(15);
+  });
+
   it('creates snapshot file on first run', () => {
     const logDir = makeLogDir([
       { timestamp: '2026-03-30T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 100, cache_creation_tokens: 50 },
