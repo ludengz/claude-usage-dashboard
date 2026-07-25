@@ -36,6 +36,8 @@ let _cachedCycleData = null;
 let _quotaContext = null;
 let _quotaWindow = null;
 let _lastCost = null;
+let _lastQuota = null;
+let _lastCost7d = 0;
 // Re-running the scrollspy after a render: section heights move when charts
 // and tables repaint, which can leave the highlighted anchor pointing at a
 // section that is no longer under the trigger line.
@@ -94,6 +96,19 @@ function renderCostPanel() {
   renderCostComparison(document.getElementById('chart-cost-comparison'), _lastCost, quotaContextForRange());
 }
 
+// The rail's multiple needs a quota reading and the plan's fee, and those two
+// arrive on independent round-trips: switching plans fires loadAll() and
+// loadQuota() concurrently, so whichever lands first would otherwise render
+// against the other's stale half. Both callers repaint through here.
+function renderValueBlock() {
+  if (!_lastQuota) return;
+  renderSubscriptionValue(document.getElementById('value-block'), {
+    quota: _lastQuota,
+    cost7d: _lastCost7d,
+    subscriptionPrice: state.plan.customPrice || _lastCost?.subscription_cost_usd || 0,
+  });
+}
+
 async function loadQuota() {
   try {
     const [data, cycleData] = await Promise.all([fetchQuota(), fetchQuotaCycles()]);
@@ -124,10 +139,9 @@ async function loadQuota() {
 
     renderQuotaGauges(document.getElementById('chart-quota'), data);
 
-    const price = state.plan.customPrice || _lastCost?.subscription_cost_usd || 0;
-    renderSubscriptionValue(document.getElementById('value-block'), {
-      quota: data, cost7d: cost7dValue, subscriptionPrice: price,
-    });
+    _lastQuota = data;
+    _lastCost7d = cost7dValue;
+    renderValueBlock();
 
     _quotaContext = sevenDay?.utilization > 0 && cost7dValue > 0
       ? { utilization: sevenDay.utilization, cost7d: cost7dValue }
@@ -198,6 +212,9 @@ async function loadAll() {
   if (seq !== _loadSeq) return;
 
   _lastCost = cost;
+  // A plan change repaints the fee here; the rail's multiple is derived from
+  // it and would otherwise keep the old plan's number until the next quota tick.
+  renderValueBlock();
 
   // ---- KPI row ----
   const t = usage.total;

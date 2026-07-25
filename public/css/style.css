@@ -638,6 +638,24 @@ section { scroll-margin-top: 108px; }
   .kpi, .split-cell { border-left: 0; border-top: 1px solid var(--line); }
   .kpi:first-child, .split-cell:first-child { border-top: 0; }
   .topbar-row { flex-wrap: wrap; height: auto; padding-top: 14px; padding-bottom: 14px; }
+  /* Wrapping the row is not enough: this group is itself a rigid flex line, so
+     the range control, switch, button and clock together still overflowed and
+     pushed the rightmost ones off-screen. */
+  .topbar-controls { flex-shrink: 1; flex-wrap: wrap; justify-content: flex-end; row-gap: 10px; }
+  .brand { flex-wrap: wrap; row-gap: 8px; }
   .anchors { overflow-x: auto; }
   .anchors-hint { display: none; }
+}
+
+@media (max-width: 560px) {
+  /* Last to go, in order of what you can do without: the clock is a status
+     read-out, the range control is not. */
+  .clock { display: none; }
+  .date-picker { flex-wrap: wrap; row-gap: 6px; }
+  .kpi-value { font-size: 38px; }
+  /* Panel toolbars are rigid rows too — the trend panel's granularity segment
+     alone is wider than a phone. Stack the head and let the tools wrap. */
+  .panel-head { flex-direction: column; align-items: stretch; gap: 14px; }
+  .panel-tools { flex-wrap: wrap; }
+  .input { width: 100%; }
 }
