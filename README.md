@@ -3,63 +3,83 @@
 [![npm version](https://img.shields.io/npm/v/claude-usage-dashboard)](https://www.npmjs.com/package/claude-usage-dashboard)
 [![npm downloads](https://img.shields.io/npm/dm/claude-usage-dashboard)](https://www.npmjs.com/package/claude-usage-dashboard)
 
-> Find out what your Claude Code subscription is actually worth in API costs — and whether your quota is shrinking — across every machine you own.
+**A flat fee tells you nothing about what you used.**
 
-Your $200/month Max plan might be consuming **$15,000+/month** in API-equivalent value. This dashboard shows you exactly how much — per project, per session, per model, and across all your machines in one unified view. It also tracks your 7-day quota cycles, projects token usage at full utilization, and keeps history so you can spot if your effective quota quietly changed. One command to start. Completely local.
-
-```bash
-npx claude-usage-dashboard
-```
-
-![Dashboard Screenshot](docs/screenshots/dashboard.png?v=3)
-
-## What You'll See
-
-### :computer: See Every Machine in One Place
-
-Use Claude on a laptop, a desktop, and a work machine? Most dashboards only see the one they're running on. This one syncs across all of them.
-
-Point it at any shared folder — Google Drive, Dropbox, OneDrive, a NAS, an rsync target — and every machine's logs roll up into one unified view. No server. No account. Just a folder you already have.
-
-### :dollar: Know What You're Spending
-
-Real-time projected API cost at your current usage rate — weekly and monthly. At 5% quota utilization, you might be burning through **$3,600/week** equivalent. The dashboard calculates this from your actual quota window, not estimates.
-
-### :bar_chart: Track Your Quota in Real Time
-
-Live utilization gauges for 5-hour, 7-day, and per-model quotas pulled directly from the Anthropic API. Auto-detects your plan tier (Pro / Max 5x / Max 20x). Never get throttled by surprise again.
-
-### :chart_with_upwards_trend: Track Your Quota Across Cycles
-
-Anthropic doesn't publish exact token limits, and those limits can change without notice. The Quota Cycle History section gives you a running record of each 7-day cycle so you can see exactly how much you got and whether it stayed consistent.
-
-For each cycle, the dashboard projects what your full token quota would be at 100% utilization — broken down by Input, Output, Cache Read, Cache Write, and Total. A horizontal bar chart overlays actual vs. projected per cycle, and the history table highlights projected tokens and cost with a delta column showing the change versus the previous cycle.
-
-That delta is the key signal: if your projected quota drops from one cycle to the next without you changing how you work, something changed on the platform side. Track your actual consumption week-over-week so you have real numbers when something feels off — not just a gut feeling. Up to 10 past cycles are retained across all your machines.
-
-### :mag: Find What's Eating Your Tokens
-
-Per-project and per-session cost breakdowns show exactly where your usage goes. Sortable session table with cost, duration, and full token breakdown. Spot the expensive sessions instantly.
-
-### :zap: Understand Your Cache Efficiency
-
-You'll probably discover that ~95% of your tokens are cache reads at 1/10th the cost. The dashboard visualizes cache read vs. cache write vs. uncached requests so you can see how efficiently Claude is using context.
-
-### Everything Else
-
-**Multi-machine sync** — aggregate usage across all your devices via a shared folder · **Quota cycle tracking** — monitors each 7-day reset window, projects usage at 100% utilization, logs history to detect quota changes · Hourly/daily/weekly/monthly token trends · Dollar and token toggle · Model distribution across Opus/Sonnet/Haiku · Active hours heatmap · Auto-refresh (30s) · Persistent filters via localStorage · Dark theme
-
-## Quick Start
-
-Run directly — no install, no config, no API keys needed:
+Claude Code writes a log every time it works. This reads those logs and puts a number on them — what the same work would cost at API rates, how much quota is left, and whether that quota is still the size it was last week.
 
 ```bash
 npx claude-usage-dashboard
 ```
 
-Open [localhost:3000](http://localhost:3000). That's it.
+![Dashboard](docs/screenshots/dashboard.png?v=4)
 
-### From Source
+---
+
+### Value
+
+A subscription is a fixed number. What it buys is not.
+
+One figure carries the rail: API-equivalent value per subscription dollar, at full quota utilization. A $200 plan routinely meters five figures of API-equivalent traffic in a month. Beneath it, the crossing point — the share of the quota window at which the API bill would have overtaken the fee.
+
+### Quota
+
+Five-hour and seven-day windows, read from Anthropic with the OAuth credentials already sitting on your machine. Plan tier is detected, not declared.
+
+### Cycles
+
+Anthropic does not publish token limits, and limits move without announcement.
+
+Every seven-day window is recorded as it closes — consumption by kind, and the ceiling implied at 100% utilization. Ten cycles retained, pooled across machines. A Δ column carries the change from the window before.
+
+When that number falls and your habits did not, you have the record.
+
+### One ledger, every machine
+
+A laptop, a desktop, a work machine. Each one only ever sees itself.
+
+Point them all at a single shared folder — Drive, Dropbox, OneDrive, a NAS, an rsync target — and the logs roll into one view. No server, no account, no API key. A folder you already have.
+
+### Consumption
+
+Hourly through monthly. Tokens or dollars. Per project, per session, per model, per hour of the day.
+
+Four bands in every bar, ordered by price: cache read, cache write, input, output. Cache read is usually most of the mass and a tenth of the cost — the shape of that stack is the shape of your bill.
+
+---
+
+### Specification
+
+|  |  |
+| --- | --- |
+| Reads | `~/.claude/projects/**/*.jsonl` |
+| Quota | Anthropic API · local OAuth credentials |
+| Refresh | 5 s log re-read · 30 s dashboard · 30 s sync copy · 120 s quota |
+| Retained | 10 quota cycles |
+| Granularity | Hourly · daily · weekly · monthly |
+| Ranges | Quota window · 7 / 30 / 90 days · custom |
+| Persists | Range, granularity, plan, refresh — localStorage |
+| Stack | Node · Express · D3. No build step. |
+| Leaves the machine | The quota read. Nothing else. |
+
+### Design
+
+Near-monochrome and warm. A single accent — Claude's terracotta — spent only on the figure that matters and on anything past a threshold. Healthy meters stay neutral: colour is an alarm here, not decoration.
+
+Instrument Serif for figures, IBM Plex Sans for the interface, IBM Plex Mono wherever you might compare one row against another. One page, no routes — the header anchors move you without reloading you.
+
+---
+
+## Install
+
+```bash
+npx claude-usage-dashboard
+```
+
+Open [localhost:3000](http://localhost:3000).
+
+If that port is taken — or silently blocked, which Windows does more often than you would expect — it falls through 8080, then 8765, then whatever the OS hands out, and prints the address it actually got.
+
+**From source**
 
 ```bash
 git clone https://github.com/ludengz/claude-usage-dashboard.git
@@ -68,50 +88,48 @@ npm install
 npm start
 ```
 
-### Custom Port
+**A chosen port**
 
 ```bash
 PORT=8080 npx claude-usage-dashboard
 ```
 
-## Multi-Machine Sync
+Set explicitly, it does not fall back. It fails, and tells you why.
 
-If you use Claude Code on more than one machine — a desktop and a laptop, a work Mac and a home PC — each one only sees its own logs. Sync solves this.
+## Multi-machine sync
 
-Set two environment variables on each machine, then start the dashboard normally:
+Two environment variables per machine, then start normally.
 
 ```bash
-# Add to your shell profile (~/.bashrc, ~/.zshrc, etc.) on each machine:
+# ~/.bashrc, ~/.zshrc, etc.
 export CLAUDE_DASH_SYNC_DIR="$HOME/Google Drive/claude-sync"
 export CLAUDE_DASH_MACHINE_NAME="MacBook"   # optional — defaults to hostname
 ```
 
-On Windows, set them as user environment variables:
+On Windows, as user environment variables:
 
 ```powershell
 [Environment]::SetEnvironmentVariable('CLAUDE_DASH_SYNC_DIR', 'C:\Users\you\Google Drive\claude-sync', 'User')
 [Environment]::SetEnvironmentVariable('CLAUDE_DASH_MACHINE_NAME', 'Desktop', 'User')
 ```
 
-Or pass them inline:
+Or inline:
 
 ```bash
 CLAUDE_DASH_SYNC_DIR="/path/to/shared" CLAUDE_DASH_MACHINE_NAME="MacBook" npx claude-usage-dashboard
 ```
 
-On startup, local logs from `~/.claude/projects/` are copied into `<sync_dir>/<machine_name>/`. The dashboard then reads **all machine folders** in the sync directory, giving you a single aggregated view across every device. Usage re-syncs every 5 seconds.
+Local logs are copied into `<sync_dir>/<machine_name>/` on startup and every 30 seconds thereafter. The dashboard then reads every machine folder in that directory. Any machine pointed at the same folder contributes to the aggregate.
 
-**Works with any shared folder.** Google Drive, Dropbox, OneDrive, iCloud Drive, Syncthing, a NAS, or a plain rsync cronjob. No server, no account, no API key — just a folder that syncs between your machines.
+Works with anything that syncs a folder: Google Drive, Dropbox, OneDrive, iCloud Drive, Syncthing, a NAS, a plain rsync cronjob.
 
-## How It Works
+## How it works
 
-Reads the JSONL session logs that Claude Code already writes to `~/.claude/projects/` on your machine. If you use Claude Code, the data is already there. Logs are re-read every 5 seconds — new usage appears without restarting.
+The data already exists. Claude Code writes JSONL session logs to `~/.claude/projects/` as it runs; this reads them, prices each record server-side, and aggregates on request. Logs are re-read every five seconds, and only files whose size or mtime changed are parsed again — new usage appears without a restart.
 
-When `CLAUDE_DASH_SYNC_DIR` is set, the dashboard copies local logs into `<sync_dir>/<machine_name>/` on startup and on every refresh. It then reads all machine subfolders in that directory — so any machine running the dashboard with the same sync folder contributes to the aggregate view.
+Quota comes from the Anthropic API, authenticated with the OAuth credentials the `claude` CLI already stored locally. That request is the only thing that leaves your machine.
 
-Subscription quota data is fetched from the Anthropic API using your existing local OAuth credentials. Your plan tier is auto-detected.
-
-## Running Tests
+## Tests
 
 ```bash
 npm test

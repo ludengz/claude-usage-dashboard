@@ -7,8 +7,9 @@ import { renderModelDistribution } from './charts/model-distribution.js';
 import { renderCacheEfficiency } from './charts/cache-efficiency.js';
 import { renderProjectDistribution } from './charts/project-distribution.js';
 import { renderSessionTable } from './charts/session-stats.js';
-import { renderQuotaGauges } from './charts/quota-gauge.js';
+import { renderQuotaGauges, renderSubscriptionValue } from './charts/quota-gauge.js';
 import { renderQuotaCycles } from './charts/quota-cycles.js';
+import { C, MIX, fmtTokens, fmtCost } from './theme.js';
 
 const state = {
   dateRange: { from: null, to: null },
@@ -29,25 +30,42 @@ const state = {
 
 let datePicker, planSelector;
 let _cachedCycleData = null;
+// The break-even line lives in the cost panel but its inputs arrive with the
+// quota round-trip, which finishes independently of loadAll(). Cache both
+// sides so whichever lands second can repaint the panel.
+let _quotaContext = null;
+let _quotaWindow = null;
+let _lastCost = null;
+// Re-running the scrollspy after a render: section heights move when charts
+// and tables repaint, which can leave the highlighted anchor pointing at a
+// section that is no longer under the trigger line.
+let _refreshAnchors = () => {};
 
-function formatNumber(n) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
-  return n.toString();
-}
-
-function updateLastUpdated() {
-  const el = document.getElementById('last-updated');
-  if (el) {
-    const now = new Date();
-    el.textContent = `Updated ${now.toLocaleTimeString()} ${getTimezoneAbbr()}`;
-  }
+function setMeter(id, segments) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = segments
+    .filter(s => s.pct > 0)
+    .map(s => `<div style="width:${Math.min(100, s.pct)}%;background:${s.color}"></div>`)
+    .join('');
 }
 
 function getTimezoneAbbr() {
   const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(new Date());
-  const tz = parts.find(p => p.type === 'timeZoneName');
-  return tz ? tz.value : '';
+  return parts.find(p => p.type === 'timeZoneName')?.value || '';
+}
+
+// The header clock reports the last successful refresh, not wall time — a
+// ticking clock that keeps ticking after the data went stale is a lie.
+function markRefreshed() {
+  const el = document.getElementById('last-updated');
+  if (el) el.textContent = new Date().toLocaleTimeString();
+  const dot = document.querySelector('.clock-dot');
+  if (dot) dot.classList.remove('is-stale');
+  clearTimeout(markRefreshed._staleTimer);
+  markRefreshed._staleTimer = setTimeout(() => {
+    document.querySelector('.clock-dot')?.classList.add('is-stale');
+  }, state.autoRefreshInterval * 2500);
 }
 
 // Derive the 7-day quota window from resets_at, truncated to the hour
@@ -60,37 +78,65 @@ function getQuotaWindow(sevenDay) {
   return { from: windowStart, to: resetsAt };
 }
 
+// The break-even line is "where the API bar would cross the subscription bar",
+// so it may only be drawn when both bars describe the same span the quota
+// utilization does. Widen the date range past the quota window and the two
+// stop being comparable — drop the line rather than print a number that
+// silently mixes a 90-day cost with a 7-day utilization.
+function quotaContextForRange() {
+  if (!_quotaContext || !_quotaWindow) return null;
+  const { from, to } = state.dateRange;
+  return (from === _quotaWindow.from && to === _quotaWindow.to) ? _quotaContext : null;
+}
+
+function renderCostPanel() {
+  if (!_lastCost) return;
+  renderCostComparison(document.getElementById('chart-cost-comparison'), _lastCost, quotaContextForRange());
+}
+
 async function loadQuota() {
   try {
     const [data, cycleData] = await Promise.all([fetchQuota(), fetchQuotaCycles()]);
     _cachedCycleData = cycleData;
 
-    // Use the actual quota window (resets_at - 7 days → resets_at)
     let cost7dValue = 0;
-    let quotaWindowFrom = null;
-    let quotaWindowTo = null;
     const sevenDay = data.seven_day;
     const window = getQuotaWindow(sevenDay);
-    if (window && sevenDay.utilization > 0) {
-      quotaWindowFrom = window.from;
-      quotaWindowTo = window.to;
-      // Use local date-only format (YYYY-MM-DD) to match the date picker's
+    _quotaWindow = null;
+    if (window) {
+      // Local date-only format (YYYY-MM-DD) matches the date picker's
       // filtering — filterByDateRange treats date-only strings as local
-      // midnight boundaries, ensuring consistent results across all views.
+      // midnight boundaries, keeping results consistent across views.
       const fmtD = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      const cost7d = await fetchCost({
-        from: fmtD(window.from),
-        to: fmtD(window.to),
-        plan: state.plan.plan,
-      });
-      cost7dValue = cost7d.api_equivalent_cost_usd;
+      _quotaWindow = { from: fmtD(window.from), to: fmtD(window.to) };
+      // Snap the "Quota window" preset to the real window on every refresh —
+      // resets_at rolls forward and the range must follow it.
+      datePicker?.setQuotaWindow(_quotaWindow.from, _quotaWindow.to);
+      if (sevenDay.utilization > 0) {
+        const cost7d = await fetchCost({
+          ..._quotaWindow,
+          plan: state.plan.plan,
+          customPrice: state.plan.customPrice,
+        });
+        cost7dValue = cost7d.api_equivalent_cost_usd;
+      }
     }
 
-    renderQuotaGauges(document.getElementById('chart-quota'), data, {
-      cost7d: cost7dValue, quotaWindowFrom, quotaWindowTo,
+    renderQuotaGauges(document.getElementById('chart-quota'), data);
+
+    const price = state.plan.customPrice || _lastCost?.subscription_cost_usd || 0;
+    renderSubscriptionValue(document.getElementById('value-block'), {
+      quota: data, cost7d: cost7dValue, subscriptionPrice: price,
     });
+
+    _quotaContext = sevenDay?.utilization > 0 && cost7dValue > 0
+      ? { utilization: sevenDay.utilization, cost7d: cost7dValue }
+      : null;
+    renderCostPanel();
+
     const el = document.getElementById('quota-last-updated');
-    if (el && data.lastFetched) el.textContent = `Updated ${new Date(data.lastFetched).toLocaleTimeString()} ${getTimezoneAbbr()}`;
+    if (el && data.lastFetched) el.textContent = new Date(data.lastFetched).toLocaleTimeString();
+
     renderQuotaCycles(document.getElementById('chart-quota-cycles'), cycleData, {
       modelKey: state.cycleModel,
     });
@@ -115,14 +161,8 @@ function startAutoRefresh() {
 }
 
 function stopAutoRefresh() {
-  if (state._refreshTimer) {
-    clearInterval(state._refreshTimer);
-    state._refreshTimer = null;
-  }
-  if (state._quotaTimer) {
-    clearInterval(state._quotaTimer);
-    state._quotaTimer = null;
-  }
+  if (state._refreshTimer) { clearInterval(state._refreshTimer); state._refreshTimer = null; }
+  if (state._quotaTimer) { clearInterval(state._quotaTimer); state._quotaTimer = null; }
 }
 
 let _loadSeq = 0;
@@ -157,28 +197,44 @@ async function loadAll() {
   }
   if (seq !== _loadSeq) return;
 
-  // Summary cards
+  _lastCost = cost;
+
+  // ---- KPI row ----
   const t = usage.total;
   const totalAll = t.input_tokens + t.output_tokens + t.cache_read_tokens + t.cache_creation_tokens;
-  document.getElementById('val-total-tokens').textContent = formatNumber(totalAll);
-  document.getElementById('sub-total-tokens').innerHTML =
-    `<span style="color:#4ade80">cache read:${formatNumber(t.cache_read_tokens)}</span> · ` +
-    `<span style="color:#f59e0b">cache write:${formatNumber(t.cache_creation_tokens)}</span> · ` +
-    `<span style="color:#60a5fa">in:${formatNumber(t.input_tokens)}</span> · ` +
-    `<span style="color:#f97316">out:${formatNumber(t.output_tokens)}</span>`;
-  document.getElementById('val-api-cost').textContent = `$${cost.api_equivalent_cost_usd.toFixed(2)}`;
+  document.getElementById('val-total-tokens').textContent = fmtTokens(totalAll);
+  document.getElementById('sub-total-tokens').textContent =
+    `cr ${fmtTokens(t.cache_read_tokens)} · cw ${fmtTokens(t.cache_creation_tokens)} · ` +
+    `in ${fmtTokens(t.input_tokens)} · out ${fmtTokens(t.output_tokens)}`;
+  const share = v => (totalAll > 0 ? (v / totalAll) * 100 : 0);
+  setMeter('meter-total-tokens', [
+    { pct: share(t.cache_read_tokens), color: MIX.cacheRead },
+    { pct: share(t.cache_creation_tokens), color: MIX.cacheWrite },
+    { pct: share(t.input_tokens), color: MIX.input },
+    { pct: share(t.output_tokens), color: MIX.output },
+  ]);
 
-  document.getElementById('val-cache-rate').textContent = `${(cache.cache_read_rate * 100).toFixed(1)}%`;
+  const apiCost = cost.api_equivalent_cost_usd;
+  const price = cost.subscription_cost_usd || 0;
+  document.getElementById('val-api-cost').textContent = fmtCost(apiCost);
+  const feeShare = price > 0 ? (apiCost / price) * 100 : 0;
+  setMeter('meter-api-cost', [{ pct: feeShare, color: C.accent }]);
+  document.getElementById('sub-api-cost').textContent = price > 0
+    ? `${feeShare.toFixed(0)}% of your ${fmtCost(price)} monthly fee`
+    : 'at standard API pricing';
 
-  // Set active granularity button
-  const activeGran = usage.granularity;
+  const cacheRate = (cache.cache_read_rate || 0) * 100;
+  document.getElementById('val-cache-rate').textContent = `${cacheRate.toFixed(1)}%`;
+  setMeter('meter-cache-rate', [{ pct: cacheRate, color: C.ok }]);
+  document.getElementById('sub-cache-rate').textContent = 'cache_read / total input · ≈10× cheaper';
+
   document.querySelectorAll('#granularity-toggle button').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.granularity === activeGran);
+    btn.classList.toggle('active', btn.dataset.granularity === usage.granularity);
   });
 
-  // Charts
+  // ---- charts ----
   renderTokenTrend(document.getElementById('chart-token-trend'), usage, { yAxis: state.trendYAxis });
-  renderCostComparison(document.getElementById('chart-cost-comparison'), cost);
+  renderCostPanel();
   renderModelDistribution(document.getElementById('chart-model-distribution'), models);
   renderCacheEfficiency(document.getElementById('chart-cache-efficiency'), cache);
   renderProjectDistribution(document.getElementById('chart-project-distribution'), projects);
@@ -199,7 +255,8 @@ async function loadAll() {
     },
   });
 
-  updateLastUpdated();
+  markRefreshed();
+  _refreshAnchors();
 }
 
 // Max bucket limits per granularity to avoid crashing the browser
@@ -215,7 +272,6 @@ function updateGranularityButtons() {
     btn.disabled = tooLarge;
     btn.title = tooLarge ? `Range too large for ${gran} view (max ${maxDays} days)` : '';
   });
-  // If currently selected granularity is now disabled, switch to the finest available
   const currentBtn = document.querySelector(`#granularity-toggle button[data-granularity="${state.granularity}"]`);
   if (currentBtn && currentBtn.disabled) {
     const order = ['hourly', 'daily', 'weekly', 'monthly'];
@@ -228,13 +284,73 @@ function updateGranularityButtons() {
       localStorage.setItem('selectedGranularity', state.granularity);
     }
   }
-  // Update active class
   document.querySelectorAll('#granularity-toggle button').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.granularity === state.granularity);
   });
 }
 
+// 2b has no sidebar: the header anchors are the only navigation, so they have
+// to track the reader instead of only reacting to clicks.
+function initAnchors() {
+  const links = [...document.querySelectorAll('.anchor')];
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  if (sections.length === 0) return;
+
+  for (const link of links) {
+    link.addEventListener('click', (e) => {
+      const target = document.querySelector(link.getAttribute('href'));
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  const setActive = (id) => {
+    for (const link of links) {
+      link.classList.toggle('is-active', link.getAttribute('href') === `#${id}`);
+    }
+  };
+
+  // A trigger line just below the sticky header, evaluated against every
+  // section on each scroll. IntersectionObserver is the wrong tool here: its
+  // callback only carries the sections whose state *changed*, so picking the
+  // topmost of that partial batch skips any section shorter than the observed
+  // band — Quota cycles (~190px) could never win against Projects entering
+  // right behind it.
+  const TRIGGER = 120; // must exceed section scroll-margin-top (108px)
+
+  const currentSection = () => {
+    // A short trailing section may never reach the trigger line because the
+    // page runs out of scroll; at the bottom the last one is unambiguously
+    // what the reader is looking at. Requires a scrollable page — on a viewport
+    // taller than the document, "at the bottom" is also "at the top".
+    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+    if (maxScroll > 0 && window.scrollY >= maxScroll - 2) return sections[sections.length - 1];
+    let current = sections[0];
+    for (const s of sections) {
+      if (s.getBoundingClientRect().top <= TRIGGER) current = s;
+    }
+    return current;
+  };
+
+  let frame = 0;
+  const update = () => {
+    frame = 0;
+    setActive(currentSection().id);
+  };
+  const onScroll = () => { if (!frame) frame = requestAnimationFrame(update); };
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll, { passive: true });
+  _refreshAnchors = onScroll;
+  update();
+}
+
 function init() {
+  initAnchors();
+
   datePicker = initDatePicker(document.getElementById('date-picker'), (range) => {
     state.dateRange = range;
     state.sessionPage = 1;
@@ -247,6 +363,7 @@ function init() {
   planSelector = initPlanSelector(document.getElementById('plan-selector'), (plan) => {
     state.plan = plan;
     loadAll();
+    loadQuota();
   });
   // Sync state with the selector's persisted choice — the hardcoded default
   // (max20x) otherwise drives cost math while the dropdown shows e.g. Pro.
@@ -260,7 +377,6 @@ function init() {
     }
   });
 
-  // Y-axis toggle (tokens / dollars)
   const yaxisToggle = document.getElementById('yaxis-toggle');
   yaxisToggle.querySelectorAll('button').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.yaxis === state.trendYAxis);
@@ -301,15 +417,12 @@ function init() {
   autoToggle.addEventListener('change', () => {
     state.autoRefresh = autoToggle.checked;
     localStorage.setItem('autoRefresh', state.autoRefresh);
-    if (state.autoRefresh) {
-      startAutoRefresh();
-    } else {
-      stopAutoRefresh();
-    }
+    if (state.autoRefresh) startAutoRefresh();
+    else stopAutoRefresh();
   });
 
   document.getElementById('cycle-model-toggle').addEventListener('click', (e) => {
-    if (e.target.tagName === 'BUTTON') {
+    if (e.target.tagName === 'BUTTON' && !e.target.disabled) {
       state.cycleModel = e.target.dataset.cycleModel;
       document.querySelectorAll('#cycle-model-toggle button').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.cycleModel === state.cycleModel);
@@ -317,6 +430,15 @@ function init() {
       loadQuotaCyclesData();
     }
   });
+
+  // Machine badge — only meaningful when logs are synced from more than one box
+  fetchStatus().then(status => {
+    const badge = document.getElementById('machine-badge');
+    if (badge && status.machine_count > 1) {
+      badge.textContent = `${status.machine_count} machines`;
+      badge.hidden = false;
+    }
+  }).catch(() => {});
 
   // Auto-detect subscription tier
   fetchSubscription().then(info => {
@@ -327,30 +449,15 @@ function init() {
       state.plan = detected;
       if (changed) loadAll(); // re-render costs if detection updated the plan after the initial load
     }
-    const tierLabels = { pro: 'Pro', max5x: 'Max 5x', max20x: 'Max 20x' };
-    const label = tierLabels[info.plan];
-    if (label) {
-      const h2 = document.querySelector('#quota-section h2');
-      if (h2) h2.textContent = `Subscription Quota (${label})`;
-    }
   }).catch(() => {});
 
-  // Paint immediately with the persisted/default date range — gating the
-  // first render on the quota round-trip to Anthropic held the whole
-  // dashboard blank for seconds. When quota arrives the gauges render, and
-  // if the 7-day window differs from the current range, setRange fires the
-  // date-picker onChange which reloads the data for the quota window.
+  // Paint immediately with the preset's provisional range — gating the first
+  // render on the quota round-trip to Anthropic held the whole dashboard blank
+  // for seconds. loadQuota() then hands the real window to the picker, which
+  // fires onChange and reloads only if the range actually moved.
   loadAll();
   startAutoRefresh();
-  loadQuota().then(data => {
-    const window = getQuotaWindow(data?.seven_day);
-    if (!window) return;
-    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const from = fmt(window.from);
-    const to = fmt(window.to);
-    const cur = datePicker.getRange();
-    if (cur.from !== from || cur.to !== to) datePicker.setRange(from, to);
-  });
+  loadQuota();
 }
 
 document.addEventListener('DOMContentLoaded', init);

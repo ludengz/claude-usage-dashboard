@@ -1,11 +1,4 @@
-const fmt = (n) => {
-  if (n == null) return '—';
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
-  return n.toString();
-};
-
-const fmtCost = (n) => n == null ? '—' : `$${n.toFixed(2)}`;
+import { C, fmtTokens, fmtCost } from '../theme.js';
 
 const fmtDate = (iso) => {
   const d = new Date(iso);
@@ -14,7 +7,11 @@ const fmtDate = (iso) => {
 
 function getModelData(cycle, modelKey) {
   if (modelKey === 'overall') return cycle.overall;
-  return cycle.models?.[modelKey] || { utilization: 0, actualTokens: 0, projectedTokensAt100: null, actualCost: 0, projectedCostAt100: null, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 } };
+  return cycle.models?.[modelKey] || {
+    utilization: 0, actualTokens: 0, projectedTokensAt100: null,
+    actualCost: 0, projectedCostAt100: null,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 },
+  };
 }
 
 const MAX_DISPLAY_CYCLES = 10;
@@ -26,7 +23,6 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     ((data.currentCycle.models?.opus?.utilization > 0) ||
      (data.currentCycle.models?.sonnet?.utilization > 0));
 
-  // --- Model toggle: grey out when no data ---
   const toggleEl = document.getElementById('cycle-model-toggle');
   if (toggleEl) {
     toggleEl.querySelectorAll('button[data-cycle-model="opus"], button[data-cycle-model="sonnet"]').forEach(btn => {
@@ -34,13 +30,9 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     });
   }
 
-  // --- Inline projection summary in header ---
   const summaryEl = document.getElementById('cycle-projection-summary');
-  if (summaryEl) {
-    summaryEl.textContent = '';
-  }
+  if (summaryEl) summaryEl.textContent = '';
 
-  // --- Bar Chart (compact) ---
   container.innerHTML = '';
 
   const allCycles = [];
@@ -48,112 +40,59 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
   if (data.currentCycle) allCycles.push(data.currentCycle);
 
   if (allCycles.length === 0) {
-    container.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;font-size:12px">No cycle data yet.</div>';
+    container.innerHTML = '<div class="empty">No cycle data yet.</div>';
+    const emptyTable = document.getElementById('quota-cycles-table');
+    if (emptyTable) emptyTable.innerHTML = '';
     return;
   }
 
   const displayAll = allCycles.slice(-MAX_DISPLAY_CYCLES);
-
-  const chartData = displayAll.map(c => {
+  const rows = displayAll.map(c => {
     const d = getModelData(c, modelKey);
     return {
       label: `${fmtDate(c.start)}–${fmtDate(c.resets_at)}`,
-      actual: d.actualTokens,
+      actual: d.actualTokens || 0,
       projected: d.projectedTokensAt100,
       isCurrent: c === data.currentCycle,
     };
   });
 
-  // Horizontal bar chart
-  const rowHeight = 28;
-  const margin = { top: 20, right: 50, bottom: 6, left: 70 };
-  const width = container.clientWidth - margin.left - margin.right;
-  const height = chartData.length * rowHeight;
+  // Scale every row against the same maximum so cycles stay comparable —
+  // per-row normalisation would make a tiny cycle look like a full one.
+  const scaleMax = Math.max(...rows.map(r => Math.max(r.actual, r.projected || 0)), 1);
 
-  const svg = d3.select(container).append('svg')
-    .attr('width', width + margin.left + margin.right)
-    .attr('height', height + margin.top + margin.bottom)
-    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
-
-  const y0 = d3.scaleBand().domain(chartData.map(d => d.label)).range([0, height]).padding(0.25);
-  const maxVal = d3.max(chartData, d => Math.max(d.actual, d.projected || 0)) || 1;
-  const x = d3.scaleLinear().domain([0, maxVal * 1.1]).range([0, width]);
-
-  // Axes
-  svg.append('g')
-    .call(d3.axisLeft(y0).tickSize(0))
-    .selectAll('text').attr('fill', '#94a3b8').style('font-size', '9px');
-  svg.append('g').attr('transform', `translate(0,${height})`)
-    .call(d3.axisBottom(x).ticks(4).tickFormat(d => fmt(d)))
-    .selectAll('text').attr('fill', '#94a3b8').style('font-size', '9px');
-  svg.selectAll('.domain, .tick line').attr('stroke', '#334155');
-
-  const barH = Math.min(y0.bandwidth() / 2.5, 12);
-
-  // Projected bars (behind, semi-transparent)
-  svg.selectAll('.bar-projected').data(chartData.filter(d => d.projected != null))
-    .join('rect').attr('class', 'bar-projected')
-    .attr('x', 0)
-    .attr('width', d => x(d.projected))
-    .attr('y', d => y0(d.label) + y0.bandwidth() / 2 - barH)
-    .attr('height', barH * 2)
-    .attr('fill', '#f59e0b').attr('opacity', 0.2)
-    .attr('rx', 2);
-
-  // Tooltip
-  const tooltip = d3.select(container).append('div')
-    .attr('class', 'd3-tooltip')
-    .style('opacity', 0);
-
-  function showTip(event, d) {
-    const proj = d.projected != null ? fmt(d.projected) : '—';
-    const rect = container.getBoundingClientRect();
-    tooltip.html(`<strong>${d.label}</strong><br>Actual: ${fmt(d.actual)}<br>Proj@100%: ${proj}`)
-      .style('opacity', 1)
-      .style('left', (event.clientX - rect.left + 12) + 'px')
-      .style('top', (event.clientY - rect.top - 10) + 'px');
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = `cycle-row${r.isCurrent ? ' is-current' : ''}`;
+    const projW = r.projected != null ? (r.projected / scaleMax) * 100 : 0;
+    const actualW = (r.actual / scaleMax) * 100;
+    row.innerHTML =
+      `<span class="cycle-row-label">${r.label}${r.isCurrent ? ' •' : ''}</span>` +
+      `<div class="cycle-track">` +
+        (r.projected != null ? `<div class="cycle-projected" style="width:${projW}%"></div>` : '') +
+        `<div class="cycle-actual" style="width:${actualW}%"></div>` +
+      `</div>` +
+      `<span class="cycle-row-value">${fmtTokens(r.actual)} / ${r.projected == null ? '—' : fmtTokens(r.projected)}</span>`;
+    row.title = `${r.label} — actual ${fmtTokens(r.actual)}, projected @100% ${r.projected == null ? '—' : fmtTokens(r.projected)}`;
+    container.appendChild(row);
   }
-  function hideTip() { tooltip.style('opacity', 0); }
 
-  // Actual bars (front)
-  svg.selectAll('.bar-actual').data(chartData)
-    .join('rect').attr('class', 'bar-actual')
-    .attr('x', 0)
-    .attr('width', d => x(d.actual))
-    .attr('y', d => y0(d.label) + y0.bandwidth() / 2 - barH / 2)
-    .attr('height', barH)
-    .attr('fill', d => d.isCurrent ? '#3b82f6' : '#60a5fa')
-    .attr('rx', 2);
+  const legend = document.createElement('div');
+  legend.className = 'cycle-legend';
+  legend.innerHTML =
+    `<span><i style="color:${C.accent}">■</i>actual</span>` +
+    `<span><i style="color:${C.accentGhost}">■</i>projected @100%</span>`;
+  container.appendChild(legend);
 
-  // Hover areas (full row for easy targeting)
-  svg.selectAll('.bar-hover').data(chartData)
-    .join('rect').attr('class', 'bar-hover')
-    .attr('x', 0)
-    .attr('width', width)
-    .attr('y', d => y0(d.label))
-    .attr('height', y0.bandwidth())
-    .attr('fill', 'transparent')
-    .style('cursor', 'pointer')
-    .on('mousemove', showTip)
-    .on('mouseleave', hideTip);
-
-  // Compact legend
-  const legend = svg.append('g').attr('transform', `translate(0, -8)`);
-  legend.append('rect').attr('width', 8).attr('height', 8).attr('fill', '#60a5fa').attr('rx', 1);
-  legend.append('text').attr('x', 10).attr('y', 7).text('Actual').attr('fill', '#64748b').style('font-size', '9px');
-  legend.append('rect').attr('x', 50).attr('width', 8).attr('height', 8).attr('fill', '#f59e0b').attr('opacity', 0.4).attr('rx', 1);
-  legend.append('text').attr('x', 60).attr('y', 7).text('Proj@100%').attr('fill', '#64748b').style('font-size', '9px');
-
-  // --- History Table ---
+  // --- history table ---
   const tableEl = document.getElementById('quota-cycles-table');
   if (!tableEl) return;
   tableEl.innerHTML = '';
 
   const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  thead.innerHTML = `<tr>
+  table.innerHTML = `<thead><tr>
     <th>Cycle</th>
-    <th class="align-right">Util%</th>
+    <th class="align-right">Util</th>
     <th class="align-right">In</th>
     <th class="align-right">Out</th>
     <th class="align-right">CR</th>
@@ -161,11 +100,10 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     <th class="align-right">Total</th>
     <th class="align-right">Excl CR</th>
     <th class="align-right">Cost</th>
-    <th class="align-right col-highlight">Proj Token Limit</th>
-    <th class="align-right col-highlight">Proj Cost Limit</th>
-    <th class="align-right">\u0394 Limit</th>
-  </tr>`;
-  table.appendChild(thead);
+    <th class="align-right col-highlight">Proj tokens</th>
+    <th class="align-right col-highlight">Proj cost</th>
+    <th class="align-right">Δ</th>
+  </tr></thead>`;
 
   const tbody = document.createElement('tbody');
   const displayCycles = [...displayAll].reverse();
@@ -185,20 +123,22 @@ export function renderQuotaCycles(container, data, { modelKey = 'overall' } = {}
     }
 
     const isCurrent = c === data.currentCycle;
-    const label = `${fmtDate(c.start)}–${fmtDate(c.resets_at)}${isCurrent ? ' *' : ''}`;
+    const backfillTitle = c.backfilled
+      ? ' title="Reconstructed from local logs. Utilization is unknown: the quota API only reports the window that is current when asked."'
+      : '';
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${label}</td>
-      <td class="align-right"${c.backfilled ? ' title="Reconstructed from local logs. Utilization is unknown: the quota API only reports the window that is current when asked."' : ''}>${d.utilization == null ? '—' : `${d.utilization.toFixed(1)}%`}</td>
-      <td class="align-right">${fmt(t.input)}</td>
-      <td class="align-right">${fmt(t.output)}</td>
-      <td class="align-right">${fmt(t.cacheRead)}</td>
-      <td class="align-right">${fmt(t.cacheCreation)}</td>
-      <td class="align-right">${fmt(totalInclCR)}</td>
-      <td class="align-right">${fmt(d.actualTokens)}</td>
+      <td class="${isCurrent ? 'strong' : ''}">${fmtDate(c.start)}–${fmtDate(c.resets_at)}${isCurrent ? ' <span style="color:' + C.accent + '">•</span>' : ''}</td>
+      <td class="align-right"${backfillTitle}>${d.utilization == null ? '—' : `${d.utilization.toFixed(1)}%`}</td>
+      <td class="align-right">${fmtTokens(t.input)}</td>
+      <td class="align-right">${fmtTokens(t.output)}</td>
+      <td class="align-right">${fmtTokens(t.cacheRead)}</td>
+      <td class="align-right">${fmtTokens(t.cacheCreation)}</td>
+      <td class="align-right strong">${fmtTokens(totalInclCR)}</td>
+      <td class="align-right">${fmtTokens(d.actualTokens)}</td>
       <td class="align-right">${fmtCost(d.actualCost)}</td>
-      <td class="align-right col-highlight">${fmt(d.projectedTokensAt100)}</td>
+      <td class="align-right col-highlight">${fmtTokens(d.projectedTokensAt100)}</td>
       <td class="align-right col-highlight">${fmtCost(d.projectedCostAt100)}</td>
       <td class="align-right ${deltaClass}">${deltaStr}</td>
     `;

@@ -32,12 +32,12 @@ describe('modelColor', () => {
   it('resolves date-suffixed ids to the base model colour', () => {
     // Regression: this returned the grey fallback, so haiku rendered grey in the
     // donut while its legend label was correct.
-    expect(modelColor('claude-haiku-4-5-20251001')).to.equal('#f59e0b');
+    expect(modelColor('claude-haiku-4-5-20251001')).to.equal(MODEL_COLORS['claude-haiku-4-5']);
     expect(modelColor('claude-haiku-4-5-20251001')).to.not.equal(UNKNOWN_MODEL_COLOR);
   });
 
   it('returns the colour for a plain id', () => {
-    expect(modelColor('claude-opus-4-8')).to.equal('#7c3aed');
+    expect(modelColor('claude-opus-4-8')).to.equal(MODEL_COLORS['claude-opus-4-8']);
   });
 
   it('falls back to grey for unknown models', () => {
