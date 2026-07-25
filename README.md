@@ -24,7 +24,7 @@
 
 </div>
 
-![Dashboard](docs/screenshots/dashboard.png?v=4)
+![Dashboard](docs/screenshots/dashboard.png?v=5)
 
 <div align="center"><sub>Claude Code writes a log every time it works. This reads those logs and puts a number on them.</sub></div>
 
