@@ -7,6 +7,7 @@ import { calculateRecordCost } from './pricing.js';
 import { sanitizeMachineName } from './sync.js';
 
 const MAX_HISTORY = 52;
+const CYCLE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Normalize a cycle's resets_at to hour precision for use as a dedup key.
@@ -128,6 +129,68 @@ export function computeCycleData(records, quotaData) {
 }
 
 /**
+ * Strip figures that only the quota API can supply. Backfilled cycles get their
+ * tokens and cost from the logs, but utilization is unrecoverable — the API only
+ * ever reports the window that is current when you ask — so anything derived
+ * from it must be null rather than a plausible-looking zero.
+ */
+function withUnknownUtilization(cycleData) {
+  const blank = d => ({
+    ...d,
+    utilization: null,
+    projectedTokensAt100: null,
+    projectedCostAt100: null,
+  });
+  return {
+    overall: blank(cycleData.overall),
+    models: {
+      opus: blank(cycleData.models.opus),
+      sonnet: blank(cycleData.models.sonnet),
+    },
+  };
+}
+
+/**
+ * Synthesize the cycles that elapsed between the last observed cycle and the one
+ * now current.
+ *
+ * History is otherwise built purely by observation: each update archives only
+ * the single cycle it was tracking, so every cycle that rolled over while the
+ * dashboard was down — or while quota fetches were failing — left a permanent
+ * hole no later run could fill.
+ *
+ * Boundaries are walked BACKWARD from the newly observed reset. The reset time
+ * drifts (one real gap spanned 50.21 days, or 7.17 nominal cycles), so anchoring
+ * on the newest known value keeps recent boundaries exact and pushes the
+ * residual onto the oldest synthesized cycle, whose start is clamped to the
+ * previous cycle's reset so the two cannot double-count records. A residual
+ * shorter than half a cycle is absorbed rather than emitted as its own stub.
+ */
+function synthesizeGapCycles(previousCycle, newResetsAt, allRecords) {
+  const prevEnd = new Date(previousCycle.resets_at).getTime();
+  const filled = [];
+
+  for (
+    let end = newResetsAt.getTime() - CYCLE_MS;
+    end - prevEnd > CYCLE_MS / 2 && filled.length < MAX_HISTORY;
+    end -= CYCLE_MS
+  ) {
+    const startIso = new Date(Math.max(end - CYCLE_MS, prevEnd)).toISOString();
+    const endIso = new Date(end).toISOString();
+    const records = filterByDateRange(allRecords, startIso, endIso);
+    filled.push({
+      resets_at: endIso,
+      start: startIso,
+      lastUpdated: new Date().toISOString(),
+      backfilled: true,
+      ...withUnknownUtilization(computeCycleData(records, {})),
+    });
+  }
+
+  return filled;
+}
+
+/**
  * Update the quota cycle snapshot file for this machine.
  * Called after each successful quota API fetch.
  *
@@ -165,10 +228,15 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
 
   // Compare normalized period keys to detect actual cycle boundary changes.
   // Uses hour-precision keys to tolerate varying sub-second timestamps from the API.
+  const allRecords = parseLogDirectory(logBaseDir);
+
   const storedKey = snapshot.currentCycle ? cyclePeriodKey(snapshot.currentCycle) : null;
   const newKey = cyclePeriodKey({ resets_at: resetsAt });
   if (snapshot.currentCycle && storedKey !== newKey) {
     snapshot.history.unshift(snapshot.currentCycle);
+    for (const gap of synthesizeGapCycles(snapshot.currentCycle, rawResetsAt, allRecords)) {
+      snapshot.history.unshift(gap);
+    }
     snapshot.history = deduplicateHistory(snapshot.history);
     if (snapshot.history.length > MAX_HISTORY) {
       snapshot.history = snapshot.history.slice(0, MAX_HISTORY);
@@ -176,7 +244,6 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
     snapshot.currentCycle = null;
   }
 
-  const allRecords = parseLogDirectory(logBaseDir);
   const cycleRecords = filterByDateRange(allRecords, start, resetsAt);
   const cycleData = computeCycleData(cycleRecords, quotaData);
 

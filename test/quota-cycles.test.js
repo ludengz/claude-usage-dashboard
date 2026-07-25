@@ -156,6 +156,85 @@ describe('updateQuotaCycleSnapshot', () => {
     expect(july11[0].overall.utilization).to.equal(15);
   });
 
+  it('backfills cycles that elapsed while nothing was observing', () => {
+    // History was built purely by observation: each update archived only the
+    // single cycle it was tracking, so every cycle that rolled over while the
+    // dashboard was down left a permanent hole. The real snapshot had three
+    // such holes, the largest spanning six cycles.
+    const logDir = makeLogDir([
+      { timestamp: '2026-06-16T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 0, cache_creation_tokens: 0 },
+      { timestamp: '2026-06-23T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 2000, output_tokens: 700, cache_read_tokens: 0, cache_creation_tokens: 0 },
+      { timestamp: '2026-06-30T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 3000, output_tokens: 900, cache_read_tokens: 0, cache_creation_tokens: 0 },
+    ]);
+    const filePath = path.join(tmpDir, 'quota-cycles-test-machine.json');
+    fs.writeFileSync(filePath, JSON.stringify({
+      schemaVersion: 1,
+      machineName: 'test-machine',
+      currentCycle: {
+        resets_at: '2026-06-13T04:00:00.000Z',
+        start: '2026-06-06T04:00:00.000Z',
+        lastUpdated: '2026-06-10T14:10:07.554Z',
+        overall: { utilization: 10, actualTokens: 5226234 },
+      },
+      history: [],
+    }, null, 2));
+
+    updateQuotaCycleSnapshot({
+      available: true,
+      seven_day: { utilization: 14, resets_at: '2026-07-11T04:00:00.000Z' },
+      seven_day_sonnet: { utilization: 14 },
+    }, logDir, 'test-machine', tmpDir);
+
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    const ends = data.history.map(h => h.resets_at).sort();
+    // The observed 6/13 cycle plus the three that rolled over unobserved
+    expect(ends).to.deep.equal([
+      '2026-06-13T04:00:00.000Z',
+      '2026-06-20T04:00:00.000Z',
+      '2026-06-27T04:00:00.000Z',
+      '2026-07-04T04:00:00.000Z',
+    ]);
+
+    const filled = data.history.filter(h => h.backfilled);
+    expect(filled).to.have.length(3);
+    // Token totals come from the logs; utilization cannot be recovered because
+    // the quota API only ever reports the current window.
+    for (const c of filled) {
+      expect(c.overall.utilization).to.equal(null);
+      expect(c.overall.projectedTokensAt100).to.equal(null);
+    }
+    const jun20 = data.history.find(h => h.resets_at === '2026-06-20T04:00:00.000Z');
+    expect(jun20.overall.actualTokens).to.equal(1500);   // the 6/16 record
+  });
+
+  it('does not backfill across an ordinary single-cycle rollover', () => {
+    const logDir = makeLogDir([
+      { timestamp: '2026-07-06T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 0, cache_creation_tokens: 0 },
+    ]);
+    const filePath = path.join(tmpDir, 'quota-cycles-test-machine.json');
+    fs.writeFileSync(filePath, JSON.stringify({
+      schemaVersion: 1,
+      machineName: 'test-machine',
+      currentCycle: {
+        resets_at: '2026-07-11T04:00:00.000Z',
+        start: '2026-07-04T04:00:00.000Z',
+        lastUpdated: '2026-07-06T07:24:20.993Z',
+        overall: { utilization: 15, actualTokens: 2044882 },
+      },
+      history: [],
+    }, null, 2));
+
+    updateQuotaCycleSnapshot({
+      available: true,
+      seven_day: { utilization: 5, resets_at: '2026-07-18T04:00:00.000Z' },
+      seven_day_sonnet: { utilization: 5 },
+    }, logDir, 'test-machine', tmpDir);
+
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    expect(data.history).to.have.length(1);
+    expect(data.history.some(h => h.backfilled)).to.be.false;
+  });
+
   it('creates snapshot file on first run', () => {
     const logDir = makeLogDir([
       { timestamp: '2026-03-30T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 100, cache_creation_tokens: 50 },
