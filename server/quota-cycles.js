@@ -191,6 +191,26 @@ function synthesizeGapCycles(previousCycle, newResetsAt, allRecords) {
 }
 
 /**
+ * Fill gaps that already exist between stored history entries.
+ *
+ * synthesizeGapCycles only covers the span between the cycle being archived and
+ * the one becoming current, so holes sitting between two older entries — the
+ * ones a long outage already left behind — are never looked at. This walks the
+ * stored timeline and repairs them, which is what makes existing snapshots heal
+ * rather than merely stop getting worse.
+ *
+ * Cheap once healed: a gapless timeline reads no records at all.
+ */
+function backfillHistoryGaps(history, allRecords) {
+  const sorted = [...history].sort((a, b) => new Date(b.resets_at) - new Date(a.resets_at));
+  const filled = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    filled.push(...synthesizeGapCycles(sorted[i + 1], new Date(sorted[i].resets_at), allRecords));
+  }
+  return filled;
+}
+
+/**
  * Update the quota cycle snapshot file for this machine.
  * Called after each successful quota API fetch.
  *
@@ -238,10 +258,16 @@ export function updateQuotaCycleSnapshot(quotaData, logBaseDir, machineName, sna
       snapshot.history.unshift(gap);
     }
     snapshot.history = deduplicateHistory(snapshot.history);
-    if (snapshot.history.length > MAX_HISTORY) {
-      snapshot.history = snapshot.history.slice(0, MAX_HISTORY);
-    }
     snapshot.currentCycle = null;
+  }
+
+  // Repair holes an earlier outage already left between stored entries, then
+  // trim. Runs on every write, but costs nothing once the timeline is gapless.
+  snapshot.history = deduplicateHistory(
+    snapshot.history.concat(backfillHistoryGaps(snapshot.history, allRecords))
+  );
+  if (snapshot.history.length > MAX_HISTORY) {
+    snapshot.history = snapshot.history.slice(0, MAX_HISTORY);
   }
 
   const cycleRecords = filterByDateRange(allRecords, start, resetsAt);

@@ -235,6 +235,52 @@ describe('updateQuotaCycleSnapshot', () => {
     expect(data.history.some(h => h.backfilled)).to.be.false;
   });
 
+  it('repairs holes that already exist between stored history entries', () => {
+    // Backfilling only the span around the current rollover leaves older holes
+    // untouched, so a snapshot damaged by a past outage would stop getting worse
+    // without ever getting better. The real file had three such holes.
+    const logDir = makeLogDir([
+      { timestamp: '2026-06-16T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 0, cache_creation_tokens: 0 },
+    ]);
+    const filePath = path.join(tmpDir, 'quota-cycles-test-machine.json');
+    fs.writeFileSync(filePath, JSON.stringify({
+      schemaVersion: 1,
+      machineName: 'test-machine',
+      currentCycle: {
+        resets_at: '2026-07-18T04:00:00.000Z',
+        start: '2026-07-11T04:00:00.000Z',
+        lastUpdated: '2026-07-12T00:00:00.000Z',
+        overall: { utilization: 5, actualTokens: 1 },
+      },
+      history: [
+        { resets_at: '2026-07-11T04:00:00.000Z', start: '2026-07-04T04:00:00.000Z', lastUpdated: '2026-07-06T07:24:20.993Z', overall: { utilization: 15, actualTokens: 2044882 } },
+        { resets_at: '2026-06-13T04:00:00.000Z', start: '2026-06-06T04:00:00.000Z', lastUpdated: '2026-06-10T14:10:07.554Z', overall: { utilization: 10, actualTokens: 5226234 } },
+      ],
+    }, null, 2));
+
+    updateQuotaCycleSnapshot({
+      available: true,
+      seven_day: { utilization: 5, resets_at: '2026-07-18T04:00:00.000Z' },
+      seven_day_sonnet: { utilization: 5 },
+    }, logDir, 'test-machine', tmpDir);
+
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    expect(data.history.map(h => h.resets_at).sort()).to.deep.equal([
+      '2026-06-13T04:00:00.000Z',
+      '2026-06-20T04:00:00.000Z',
+      '2026-06-27T04:00:00.000Z',
+      '2026-07-04T04:00:00.000Z',
+      '2026-07-11T04:00:00.000Z',
+    ]);
+    expect(data.history.filter(h => h.backfilled)).to.have.length(3);
+    // Real token data from the logs, but utilization stays unknown
+    const jun20 = data.history.find(h => h.resets_at === '2026-06-20T04:00:00.000Z');
+    expect(jun20.overall.actualTokens).to.equal(1500);
+    expect(jun20.overall.utilization).to.equal(null);
+    // Observed entries keep their real utilization
+    expect(data.history.find(h => h.resets_at === '2026-07-11T04:00:00.000Z').overall.utilization).to.equal(15);
+  });
+
   it('creates snapshot file on first run', () => {
     const logDir = makeLogDir([
       { timestamp: '2026-03-30T10:00:00Z', model: 'claude-sonnet-4-6', input_tokens: 1000, output_tokens: 500, cache_read_tokens: 100, cache_creation_tokens: 50 },
