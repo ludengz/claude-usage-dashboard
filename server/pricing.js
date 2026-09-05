@@ -1,4 +1,12 @@
 export const MODEL_PRICING = {
+  // Same per-token rates as Fable 5 except cache reads, which drop to 0.025x
+  // base input (a quarter of Fable 5's 0.1x rate).
+  'claude-fable-5-1': {
+    input_price_per_mtok: 10,
+    output_price_per_mtok: 50,
+    cache_read_price_per_mtok: 0.25,
+    cache_creation_price_per_mtok: 12.50,
+  },
   'claude-fable-5': {
     input_price_per_mtok: 10,
     output_price_per_mtok: 50,

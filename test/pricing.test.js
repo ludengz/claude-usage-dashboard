@@ -4,6 +4,7 @@ import { MODEL_PRICING, PLAN_DEFAULTS, calculateRecordCost, getModelPricing } fr
 
 describe('MODEL_PRICING', () => {
   it('has pricing for known models', () => {
+    expect(MODEL_PRICING['claude-fable-5-1']).to.exist;
     expect(MODEL_PRICING['claude-fable-5']).to.exist;
     expect(MODEL_PRICING['claude-opus-5']).to.exist;
     expect(MODEL_PRICING['claude-opus-4-6']).to.exist;
@@ -19,6 +20,15 @@ describe('MODEL_PRICING', () => {
     expect(MODEL_PRICING['claude-fable-5'].output_price_per_mtok).to.equal(50);
     expect(MODEL_PRICING['claude-fable-5'].cache_read_price_per_mtok).to.equal(1.00);
     expect(MODEL_PRICING['claude-fable-5'].cache_creation_price_per_mtok).to.equal(12.50);
+  });
+
+  it('prices Fable 5.1 like Fable 5 except for cheaper cache reads', () => {
+    const fable51 = MODEL_PRICING['claude-fable-5-1'];
+    const fable5 = MODEL_PRICING['claude-fable-5'];
+    expect(fable51.input_price_per_mtok).to.equal(fable5.input_price_per_mtok);
+    expect(fable51.output_price_per_mtok).to.equal(fable5.output_price_per_mtok);
+    expect(fable51.cache_creation_price_per_mtok).to.equal(fable5.cache_creation_price_per_mtok);
+    expect(fable51.cache_read_price_per_mtok).to.equal(0.25);
   });
 
   it('prices Opus 4.8 identically to Opus 4.6/4.7', () => {
@@ -80,6 +90,19 @@ describe('calculateRecordCost', () => {
     const cost = calculateRecordCost(record);
     // 300K * $10/M = $3.00 + 100K * $50/M = $5.00 + 500K * $1/M = $0.50 + 200K * $12.50/M = $2.50 = $11.00
     expect(cost).to.be.closeTo(11.00, 0.01);
+  });
+
+  it('calculates cost for Fable 5.1', () => {
+    const record = {
+      model: 'claude-fable-5-1',
+      input_tokens: 300000,
+      output_tokens: 100000,
+      cache_read_tokens: 500000,
+      cache_creation_tokens: 200000,
+    };
+    const cost = calculateRecordCost(record);
+    // 300K * $10/M = $3.00 + 100K * $50/M = $5.00 + 500K * $0.25/M = $0.125 + 200K * $12.50/M = $2.50 = $10.625
+    expect(cost).to.be.closeTo(10.625, 0.001);
   });
 
   it('calculates cost for Opus 5', () => {

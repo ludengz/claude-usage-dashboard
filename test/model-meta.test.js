@@ -22,6 +22,11 @@ describe('normalizeModelId', () => {
     expect(normalizeModelId('claude-opus-4-8')).to.equal('claude-opus-4-8');
   });
 
+  it('keeps a point release like fable 5.1 intact, with or without a date suffix', () => {
+    expect(normalizeModelId('claude-fable-5-1')).to.equal('claude-fable-5-1');
+    expect(normalizeModelId('claude-fable-5-1-20260901')).to.equal('claude-fable-5-1');
+  });
+
   it('passes through non-strings', () => {
     expect(normalizeModelId(null)).to.equal(null);
     expect(normalizeModelId(undefined)).to.equal(undefined);
@@ -58,6 +63,7 @@ describe('modelDisplayName', () => {
 
   it('returns the mapped name for a plain id', () => {
     expect(modelDisplayName('claude-opus-4-8')).to.equal('opus 4.8');
+    expect(modelDisplayName('claude-fable-5-1')).to.equal('fable 5.1');
   });
 
   it('derives a readable label for unmapped models', () => {
