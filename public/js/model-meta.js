@@ -16,6 +16,7 @@ export function normalizeModelId(modelId) {
 export const MODEL_COLORS = {
   'claude-fable-5-1': '#A9433A',
   'claude-fable-5': '#C25B4E',
+  'claude-opus-5-5': '#E8956B',
   'claude-opus-5': '#D97757',
   'claude-opus-4-8': '#C2764F',
   'claude-opus-4-7': '#B0765C',
@@ -29,6 +30,7 @@ export const MODEL_COLORS = {
 export const MODEL_DISPLAY = {
   'claude-fable-5-1': 'fable 5.1',
   'claude-fable-5': 'fable 5',
+  'claude-opus-5-5': 'opus 5.5',
   'claude-opus-5': 'opus 5',
   'claude-opus-4-8': 'opus 4.8',
   'claude-opus-4-7': 'opus 4.7',

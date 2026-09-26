@@ -6,6 +6,7 @@ describe('MODEL_PRICING', () => {
   it('has pricing for known models', () => {
     expect(MODEL_PRICING['claude-fable-5-1']).to.exist;
     expect(MODEL_PRICING['claude-fable-5']).to.exist;
+    expect(MODEL_PRICING['claude-opus-5-5']).to.exist;
     expect(MODEL_PRICING['claude-opus-5']).to.exist;
     expect(MODEL_PRICING['claude-opus-4-6']).to.exist;
     expect(MODEL_PRICING['claude-opus-4-7']).to.exist;
@@ -34,6 +35,10 @@ describe('MODEL_PRICING', () => {
   it('prices Opus 4.8 identically to Opus 4.6/4.7', () => {
     expect(MODEL_PRICING['claude-opus-4-8']).to.deep.equal(MODEL_PRICING['claude-opus-4-6']);
     expect(MODEL_PRICING['claude-opus-4-8']).to.deep.equal(MODEL_PRICING['claude-opus-4-7']);
+  });
+
+  it('prices Opus 5.5 identically to the rest of the Opus tier', () => {
+    expect(MODEL_PRICING['claude-opus-5-5']).to.deep.equal(MODEL_PRICING['claude-opus-5']);
   });
 
   it('prices Opus 5 identically to the rest of the Opus tier', () => {
