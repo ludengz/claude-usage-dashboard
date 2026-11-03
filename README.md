@@ -193,6 +193,14 @@ Quota comes from the Anthropic API, authenticated with the OAuth credentials the
 npm test
 ```
 
+## Releases
+
+Push a stable `vX.Y.Z` tag matching `package.json` on a commit already on `main` to run [Publish](.github/workflows/publish.yml). It runs the tests on Windows, packs and installs the package in isolation, and checks that npx remains in the foreground. Only that verified tarball is published to npm using OIDC. The workflow verifies the registry version, `latest` tag, and downloaded tarball integrity before creating the GitHub Release.
+
+The npm Trusted Publisher is bound to `ludengz/claude-usage-dashboard`, workflow `publish.yml`, and GitHub environment `npm`, with direct `npm publish` permission. No npm token secret is required. Account 2FA remains enabled for interactive account and package administration.
+
+Use **Actions → Publish → Run workflow** on `main` for a verification-only run. For a failed release, rerun its workflow on the same tag; an already-published version is accepted only when its integrity matches the verified artifact.
+
 ## License
 
 ISC. Bundled typefaces are SIL Open Font License 1.1 — see [`public/fonts/OFL.txt`](public/fonts/OFL.txt).
