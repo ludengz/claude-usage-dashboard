@@ -71,7 +71,9 @@ The `Δ` column carries the change from the window before. **When that number fa
 
 Hourly through monthly. Tokens or dollars. Four bands in every bar, ordered by price: cache read, cache write, input, output.
 
-Cache read is usually most of the mass and a tenth of the cost — the shape of that stack is the shape of your bill. Underneath, the hours you actually work, aggregated across the range.
+Cache read is usually most of the mass and a fraction of the cost — the shape of that stack is the shape of your bill. Underneath, the hours you actually work, aggregated across the range.
+
+API-equivalent costs use current [standard Claude API prices](https://platform.claude.com/docs/en/about-claude/pricing), including for historical logs, with 5-minute cache writes. Haiku 5.5 uses higher rates when a single request exceeds 100,000 input tokens, counting cache reads and writes. Fast mode, 1-hour cache writes, batch discounts, and regional premiums are not included.
 
 ---
 

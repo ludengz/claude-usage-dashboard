@@ -21,9 +21,11 @@ export const MODEL_COLORS = {
   'claude-opus-4-8': '#C2764F',
   'claude-opus-4-7': '#B0765C',
   'claude-opus-4-6': '#8A6350',
+  'claude-sonnet-5-5': '#D4CEC3',
   'claude-sonnet-5': '#C4BCAE',
   'claude-sonnet-4-6': '#B8B0A3',
   'claude-sonnet-4-5': '#8A8378',
+  'claude-haiku-5-5': '#E2B84B',
   'claude-haiku-4-5': '#C9A227',
 };
 
@@ -35,9 +37,11 @@ export const MODEL_DISPLAY = {
   'claude-opus-4-8': 'opus 4.8',
   'claude-opus-4-7': 'opus 4.7',
   'claude-opus-4-6': 'opus 4.6',
+  'claude-sonnet-5-5': 'sonnet 5.5',
   'claude-sonnet-5': 'sonnet 5',
   'claude-sonnet-4-6': 'sonnet 4.6',
   'claude-sonnet-4-5': 'sonnet 4.5',
+  'claude-haiku-5-5': 'haiku 5.5',
   'claude-haiku-4-5': 'haiku 4.5',
 };
 
