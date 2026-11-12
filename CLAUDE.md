@@ -26,7 +26,7 @@ npm package entry point (CJS). Uses `spawnSync` to run `server/index.js` as a ch
 ### Server (Express 5, `server/`)
 
 - `index.js` — Mounts static files and API router. Serves d3 from node_modules.
-- `parser.js` — Reads `~/.claude/projects/` JSONL files, extracts assistant messages with token usage. `deriveProjectName()` converts directory names (e.g., `-Users-foo-Workspace-myproject`) back to project names.
+- `parser.js` — Reads `~/.claude/projects/` JSONL files, extracts assistant messages with token usage. `deriveProjectName()` converts directory names (e.g., `-Users-foo-Workspace-myproject`) back to project names. Files are scanned in 8MB chunks and split on newline bytes; never `readFileSync(..., 'utf-8')` a log, since V8 caps a string at ~512MB (issue #2). An unreadable file is skipped with a one-time warning.
 - `aggregator.js` — All aggregation logic: by time (with granularity: hourly/daily/weekly/monthly), session, project, model, and cache stats. Date filtering uses local timezone.
 - `pricing.js` — Model pricing table (`MODEL_PRICING`) and `calculateRecordCost()`. Cost is computed server-side per-record. Plan subscription defaults (`PLAN_DEFAULTS`) for cost comparison.
 - `routes/api.js` — Single router factory. Parses logs once at startup into `allRecords[]`, then filters/aggregates per request. Endpoints: `/api/usage`, `/api/models`, `/api/projects`, `/api/sessions`, `/api/cost`, `/api/cache`.
@@ -36,7 +36,8 @@ npm package entry point (CJS). Uses `spawnSync` to run `server/index.js` as a ch
 - `js/app.js` — Central state management and orchestration. Calls all 6 API endpoints in parallel via `loadAll()`, updates summary cards and charts.
 - `js/api.js` — Thin fetch wrappers for each API endpoint.
 - `js/charts/` — Each chart is a standalone module using D3 v7 (imported from `/lib/d3/d3.min.js`). Charts: `token-trend.js`, `cost-comparison.js`, `model-distribution.js`, `cache-efficiency.js`, `project-distribution.js`, `session-stats.js`.
-- `js/components/` — `date-picker.js` (date range with presets), `plan-selector.js` (subscription plan toggle).
+- `js/components/` — `date-picker.js` (date range with presets), `plan-selector.js` (subscription plan toggle), `theme-toggle.js` (dark/light switch).
+- Theming — dark is the default and must not change; light applies only when `<html data-theme="light">`. `css/style.css` holds both palettes as custom properties (`:root` and `:root[data-theme="light"]`). `js/theme.js` resolves chart colours from those properties at render time (charts bake colours into SVG, so a theme switch redraws them). `js/theme-boot.js` applies a saved choice before first paint. Model colours live in `js/model-meta.js` as `MODEL_COLORS` (dark) and `MODEL_COLORS_LIGHT`; tests enforce coverage, distinctness, and light-theme contrast.
 
 ### Key Design Decisions
 

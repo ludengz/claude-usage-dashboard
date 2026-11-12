@@ -103,7 +103,8 @@ Point them all at a single shared folder — Drive, Dropbox, OneDrive, a NAS, an
 | **Retained** | 10 quota cycles |
 | **Granularity** | Hourly · daily · weekly · monthly |
 | **Ranges** | Quota window · 7 / 30 / 90 days · custom |
-| **Persists** | Range, granularity, plan, refresh — localStorage |
+| **Themes** | Dark by default · light from the header toggle |
+| **Persists** | Range, granularity, plan, refresh, theme — localStorage |
 | **Typefaces** | Instrument Serif, IBM Plex Sans, IBM Plex Mono — bundled, not fetched |
 | **Stack** | Node · Express · D3. No build step. |
 | **Leaves the machine** | The quota read. Nothing else. |
@@ -183,7 +184,7 @@ Works with anything that syncs a folder: Google Drive, Dropbox, OneDrive, iCloud
 
 ## How it works
 
-The data already exists. Claude Code writes JSONL session logs to `~/.claude/projects/` as it runs; this reads them, prices each record server-side, and aggregates on request. Logs are re-read every five seconds, and only files whose size or mtime changed are parsed again — new usage appears without a restart.
+The data already exists. Claude Code writes JSONL session logs to `~/.claude/projects/` as it runs; this reads them, prices each record server-side, and aggregates on request. Logs are re-read every five seconds, and only files whose size or mtime changed are parsed again — new usage appears without a restart. Files are read in chunks, line by line, so a multi-gigabyte session log parses like any other, and an unreadable file is skipped rather than fatal.
 
 Quota comes from the Anthropic API, authenticated with the OAuth credentials the `claude` CLI already stored locally. That request is the only thing that leaves your machine.
 
