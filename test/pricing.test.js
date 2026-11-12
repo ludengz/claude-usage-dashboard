@@ -4,6 +4,7 @@ import { MODEL_PRICING, PLAN_DEFAULTS, calculateRecordCost, getModelPricing } fr
 
 describe('MODEL_PRICING', () => {
   it('has pricing for known models', () => {
+    expect(MODEL_PRICING['claude-fable-5-2']).to.exist;
     expect(MODEL_PRICING['claude-fable-5-1']).to.exist;
     expect(MODEL_PRICING['claude-fable-5']).to.exist;
     expect(MODEL_PRICING['claude-opus-5-5']).to.exist;
@@ -32,6 +33,19 @@ describe('MODEL_PRICING', () => {
     expect(fable51.output_price_per_mtok).to.equal(fable5.output_price_per_mtok);
     expect(fable51.cache_creation_price_per_mtok).to.equal(fable5.cache_creation_price_per_mtok);
     expect(fable51.cache_read_price_per_mtok).to.equal(0.25);
+  });
+
+  it('prices Fable 5.2 at its reduced rates', () => {
+    expect(MODEL_PRICING['claude-fable-5-2']).to.deep.equal({
+      input_price_per_mtok: 8,
+      output_price_per_mtok: 40,
+      cache_read_price_per_mtok: 0.20,
+      cache_creation_price_per_mtok: 10,
+    });
+  });
+
+  it('has no prompt-length tier for Fable 5.2', () => {
+    expect(getModelPricing('claude-fable-5-2', 900000)).to.equal(MODEL_PRICING['claude-fable-5-2']);
   });
 
   it('prices Opus 4.8 identically to Opus 4.6/4.7', () => {
@@ -129,6 +143,19 @@ describe('calculateRecordCost', () => {
     const cost = calculateRecordCost(record);
     // 300K * $10/M = $3.00 + 100K * $50/M = $5.00 + 500K * $0.25/M = $0.125 + 200K * $12.50/M = $2.50 = $10.625
     expect(cost).to.be.closeTo(10.625, 0.001);
+  });
+
+  it('calculates cost for Fable 5.2, including date-suffixed ids', () => {
+    const record = {
+      model: 'claude-fable-5-2',
+      input_tokens: 300000,
+      output_tokens: 100000,
+      cache_read_tokens: 500000,
+      cache_creation_tokens: 200000,
+    };
+    // 300K * $8/M = $2.40 + 100K * $40/M = $4.00 + 500K * $0.20/M = $0.10 + 200K * $10/M = $2.00 = $8.50
+    expect(calculateRecordCost(record)).to.be.closeTo(8.50, 1e-10);
+    expect(calculateRecordCost({ ...record, model: 'claude-fable-5-2-20261101' })).to.be.closeTo(8.50, 1e-10);
   });
 
   it('calculates cost for Opus 5', () => {

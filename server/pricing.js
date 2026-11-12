@@ -1,7 +1,15 @@
-// Standard API-equivalent rates (USD per million tokens), checked 2026-11-02:
+// Standard API-equivalent rates (USD per million tokens), checked 2026-11-11:
 // https://platform.claude.com/docs/en/about-claude/pricing
 // Cache creation uses the 5-minute rate; historical usage is valued at current rates.
 export const MODEL_PRICING = {
+  // Cheaper successor to Fable 5.1 with the same multipliers: cache reads at
+  // 0.025x base input, 5-minute cache writes at 1.25x. Flat across the 1M window.
+  'claude-fable-5-2': {
+    input_price_per_mtok: 8,
+    output_price_per_mtok: 40,
+    cache_read_price_per_mtok: 0.20,
+    cache_creation_price_per_mtok: 10,
+  },
   // Same per-token rates as Fable 5 except cache reads, which drop to 0.025x
   // base input (a quarter of Fable 5's 0.1x rate).
   'claude-fable-5-1': {

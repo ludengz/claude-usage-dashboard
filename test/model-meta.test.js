@@ -64,6 +64,7 @@ describe('modelDisplayName', () => {
   it('returns the mapped name for a plain id', () => {
     expect(modelDisplayName('claude-opus-4-8')).to.equal('opus 4.8');
     expect(modelDisplayName('claude-fable-5-1')).to.equal('fable 5.1');
+    expect(modelDisplayName('claude-fable-5-2')).to.equal('fable 5.2');
     expect(modelDisplayName('claude-opus-5-5')).to.equal('opus 5.5');
     expect(modelDisplayName('claude-sonnet-5-5')).to.equal('sonnet 5.5');
     expect(modelDisplayName('claude-haiku-5-5')).to.equal('haiku 5.5');

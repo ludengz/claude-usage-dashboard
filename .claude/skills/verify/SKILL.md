@@ -49,7 +49,8 @@ synthetic record a distinct id.
   show. Widen it by setting the first date input's value and dispatching a
   bubbling `change` event.
 - Model distribution legend entries match `/— \d+.?\d*%$/`; slice colors are
-  `svg path[fill]`; session-table model tags are `.tag[class*="tag-model-"]`.
+  `svg path[fill]`; session-table model tags are plain `span.tag` elements whose
+  text is the display name (no per-model class), so match on text.
 - Cross-check numbers against the API from the page:
   `fetch('/api/cost?from=...&to=...&model=<id>')` → `api_equivalent_cost_usd`.
 - Logs re-parse with a 5s TTL + per-file mtime/size cache, so fixture edits

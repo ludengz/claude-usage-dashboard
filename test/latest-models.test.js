@@ -14,7 +14,7 @@ describe('Current model pricing through the API', () => {
     const projectDir = path.join(tmpDir, '-Users-test-Workspace-latestmodels');
     fs.mkdirSync(projectDir);
     const records = [
-      ...['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5'].map(model => ({
+      ...['claude-fable-5-2', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5'].map(model => ({
         model, input_tokens: 300000, output_tokens: 100000,
         cache_read_input_tokens: 500000, cache_creation_input_tokens: 200000,
       })),
@@ -49,6 +49,7 @@ describe('Current model pricing through the API', () => {
   }
 
   for (const [model, expectedCost] of [
+    ['claude-fable-5-2', 8.50],
     ['claude-opus-5-5', 4.30],
     ['claude-sonnet-5-5', 2.15],
     ['claude-sonnet-5', 2.20],
@@ -70,13 +71,13 @@ describe('Current model pricing through the API', () => {
 
   it('sums mixed models without treating combined Haiku usage as one long prompt', async () => {
     const { api_equivalent_cost_usd: cost } = await get('cost');
-    expect(cost).to.equal(8.72);
+    expect(cost).to.equal(17.22);
   });
 
   it('exposes both Haiku pricing tiers and detects the new models', async () => {
     const { models } = await get('models');
     expect(models.map(model => model.id)).to.have.members([
-      'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5', 'claude-haiku-5-5',
+      'claude-fable-5-2', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5', 'claude-haiku-5-5',
     ]);
     const haiku = models.find(model => model.id === 'claude-haiku-5-5');
     expect(haiku.input_price_per_mtok).to.equal(0.10);

@@ -14,6 +14,7 @@ export function normalizeModelId(modelId) {
 // hue, Sonnet recedes into the neutral greys, Haiku takes the amber warning
 // tone. Colour is a family signal here, not decoration.
 export const MODEL_COLORS = {
+  'claude-fable-5-2': '#E04A3F',
   'claude-fable-5-1': '#A9433A',
   'claude-fable-5': '#C25B4E',
   'claude-opus-5-5': '#E8956B',
@@ -30,6 +31,7 @@ export const MODEL_COLORS = {
 };
 
 export const MODEL_DISPLAY = {
+  'claude-fable-5-2': 'fable 5.2',
   'claude-fable-5-1': 'fable 5.1',
   'claude-fable-5': 'fable 5',
   'claude-opus-5-5': 'opus 5.5',
