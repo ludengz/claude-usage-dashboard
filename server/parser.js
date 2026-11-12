@@ -37,43 +37,108 @@ export function deriveProjectName(dirName) {
   return clean;
 }
 
-function recordsFromLines(text) {
-  const lines = text.split('\n').filter(line => line.trim());
-  const records = [];
+// Only assistant entries carry usage, and their compact JSON always contains
+// both of these byte sequences. Checking the raw bytes first means the large
+// user/tool-result lines are never decoded into strings at all.
+const ASSISTANT_MARK = Buffer.from('"assistant"');
+const USAGE_MARK = Buffer.from('"usage"');
 
-  for (const line of lines) {
-    let entry;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      continue;
-    }
+function recordFromLine(line) {
+  if (line.indexOf(USAGE_MARK) === -1 || line.indexOf(ASSISTANT_MARK) === -1) return null;
 
-    if (entry.type !== 'assistant') continue;
-
-    const model = entry.message?.model;
-    if (!model || model === '<synthetic>') continue;
-
-    const usage = entry.message?.usage;
-    if (!usage) continue;
-
-    records.push({
-      sessionId: entry.sessionId,
-      timestamp: entry.timestamp,
-      model,
-      messageId: entry.message?.id || null,
-      input_tokens: usage.input_tokens || 0,
-      output_tokens: usage.output_tokens || 0,
-      cache_creation_tokens: usage.cache_creation_input_tokens || 0,
-      cache_read_tokens: usage.cache_read_input_tokens || 0,
-    });
+  let entry;
+  try {
+    entry = JSON.parse(line.toString('utf8'));
+  } catch {
+    // Malformed, half-written, or longer than V8's maximum string length.
+    return null;
   }
 
-  return records;
+  if (entry?.type !== 'assistant') return null;
+
+  const model = entry.message?.model;
+  if (!model || model === '<synthetic>') return null;
+
+  const usage = entry.message?.usage;
+  if (!usage) return null;
+
+  return {
+    sessionId: entry.sessionId,
+    timestamp: entry.timestamp,
+    model,
+    messageId: entry.message?.id || null,
+    input_tokens: usage.input_tokens || 0,
+    output_tokens: usage.output_tokens || 0,
+    cache_creation_tokens: usage.cache_creation_input_tokens || 0,
+    cache_read_tokens: usage.cache_read_input_tokens || 0,
+  };
+}
+
+// Files are read in fixed-size chunks instead of as one string: a single
+// readFileSync(..., 'utf-8') of a log past ~512MB throws "Cannot create a
+// string longer than 0x1fffffe8 characters" (issue #2). Parsing is synchronous,
+// so one lazily allocated buffer is safely reused across every read.
+let chunkBytes = 8 * 1024 * 1024;
+let chunkBuffer = null;
+
+/** Test hook: shrink the chunk size to exercise lines that span chunks. */
+export function setChunkBytesForTesting(bytes) {
+  chunkBytes = bytes;
+  chunkBuffer = null;
+}
+
+/**
+ * Scan bytes [start, end) of a JSONL file. Lines split on the 0x0A byte, which
+ * never occurs inside a multi-byte UTF-8 sequence, so a character straddling a
+ * chunk boundary is always reassembled intact.
+ *
+ * Returns the records from newline-terminated lines (`stable`), the byte offset
+ * just past the last newline (`stableEnd`), and the records from a trailing
+ * unterminated fragment (`tail`), which may still be mid-write.
+ */
+function scanRecords(filePath, start = 0, end = Infinity) {
+  if (!chunkBuffer) chunkBuffer = Buffer.allocUnsafe(chunkBytes);
+  const stable = [];
+  let stableEnd = start;
+  let carry = [];
+
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    let pos = start;
+    while (pos < end) {
+      const bytesRead = fs.readSync(fd, chunkBuffer, 0, Math.min(chunkBuffer.length, end - pos), pos);
+      if (bytesRead === 0) break;
+      const chunk = chunkBuffer.subarray(0, bytesRead);
+
+      let lineStart = 0;
+      let nl;
+      while ((nl = chunk.indexOf(0x0A, lineStart)) !== -1) {
+        let line = chunk.subarray(lineStart, nl);
+        if (carry.length) {
+          line = Buffer.concat([...carry, line]);
+          carry = [];
+        }
+        const record = recordFromLine(line);
+        if (record) stable.push(record);
+        lineStart = nl + 1;
+        stableEnd = pos + lineStart;
+      }
+      // The shared buffer is overwritten by the next read, so copy the
+      // unfinished line out of it.
+      if (lineStart < bytesRead) carry.push(Buffer.from(chunk.subarray(lineStart)));
+      pos += bytesRead;
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  const tailRecord = carry.length ? recordFromLine(Buffer.concat(carry)) : null;
+  return { stable, stableEnd, tail: tailRecord ? [tailRecord] : [] };
 }
 
 export function parseLogFile(filePath) {
-  return recordsFromLines(fs.readFileSync(filePath, 'utf-8'));
+  const { stable, tail } = scanRecords(filePath);
+  return tail.length ? stable.concat(tail) : stable;
 }
 
 /**
@@ -109,19 +174,7 @@ export function dedupByMessageId(records) {
  * both mtime and size match. Sync-dir reads can sit on slow network/cloud
  * mounts (e.g. Google Drive), where re-reading hundreds of MB per refresh
  * dominates request latency — a stat is orders of magnitude cheaper.
- */
-function readBytes(filePath, from, to) {
-  const fd = fs.openSync(filePath, 'r');
-  try {
-    const buf = Buffer.alloc(to - from);
-    const read = fs.readSync(fd, buf, 0, to - from, from);
-    return buf.toString('utf-8', 0, read);
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-/**
+ *
  * Cache layout: `records` covers exactly the first `parsedBytes` bytes of the
  * file, which always end at a newline. The tail past `parsedBytes` (a line
  * still being written, or a final line without a trailing newline) is parsed
@@ -135,51 +188,51 @@ function readBytes(filePath, from, to) {
 function parseLogFileCached(filePath, fileCache) {
   if (!fileCache) return parseLogFile(filePath);
 
-  let stat;
-  try {
-    stat = fs.statSync(filePath);
-  } catch {
-    return parseLogFile(filePath);
-  }
-
+  const stat = fs.statSync(filePath);
   const prev = fileCache.get(filePath);
-  try {
-    if (prev && prev.mtimeMs === stat.mtimeMs && prev.size === stat.size) {
-      if (prev.parsedBytes === prev.size) return prev.records;
-      return prev.records.concat(recordsFromLines(readBytes(filePath, prev.parsedBytes, prev.size)));
-    }
+  const unchanged = prev && prev.mtimeMs === stat.mtimeMs && prev.size === stat.size;
+  // Anything other than unchanged or grown (shrunk, or rewritten in place)
+  // invalidates the cached prefix and needs a full re-parse.
+  const appendOnly = unchanged || (prev && stat.size > prev.size);
 
-    if (prev && stat.size > prev.size) {
-      const text = readBytes(filePath, prev.parsedBytes, stat.size);
-      const lastNl = text.lastIndexOf('\n');
-      const stable = text.slice(0, lastNl + 1);
-      const entry = {
-        mtimeMs: stat.mtimeMs,
-        size: stat.size,
-        parsedBytes: prev.parsedBytes + Buffer.byteLength(stable, 'utf8'),
-        records: stable ? prev.records.concat(recordsFromLines(stable)) : prev.records,
-      };
-      fileCache.set(filePath, entry);
-      const rest = text.slice(lastNl + 1);
-      return rest ? entry.records.concat(recordsFromLines(rest)) : entry.records;
-    }
-  } catch {
-    // fall through to a full re-parse
-  }
+  if (unchanged && prev.parsedBytes === prev.size) return prev.records;
 
-  // Full parse (new file, or shrunk/rewritten — not append-only growth)
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const lastNl = content.lastIndexOf('\n');
-  const stable = content.slice(0, lastNl + 1);
+  const from = appendOnly ? prev.parsedBytes : 0;
+  const base = appendOnly ? prev.records : [];
+  const { stable, stableEnd, tail } = scanRecords(filePath, from, stat.size);
   const entry = {
     mtimeMs: stat.mtimeMs,
     size: stat.size,
-    parsedBytes: Buffer.byteLength(stable, 'utf8'),
-    records: recordsFromLines(stable),
+    parsedBytes: stableEnd,
+    records: stable.length ? base.concat(stable) : base,
   };
   fileCache.set(filePath, entry);
-  const rest = content.slice(lastNl + 1);
-  return rest ? entry.records.concat(recordsFromLines(rest)) : entry.records;
+  return tail.length ? entry.records.concat(tail) : entry.records;
+}
+
+// One unreadable file (permissions, a directory named *.jsonl, a file removed
+// mid-scan) must not take down the whole dashboard. Skip it, and say so once
+// per file and error rather than on every refresh.
+const reportedFailures = new Set();
+
+function parseFileSafely(filePath, fileCache) {
+  try {
+    return parseLogFileCached(filePath, fileCache);
+  } catch (err) {
+    fileCache?.delete(filePath);
+    const key = `${filePath}\0${err.message}`;
+    if (!reportedFailures.has(key)) {
+      reportedFailures.add(key);
+      console.warn(`Skipping unreadable log file ${filePath}: ${err.message}`);
+    }
+    return [];
+  }
+}
+
+// Array.prototype.push(...items) passes every item as a call argument and
+// overflows the stack past roughly 100k items, which one large log can exceed.
+function appendAll(target, items) {
+  for (const item of items) target.push(item);
 }
 
 export function parseLogDirectory(baseDir, fileCache = null) {
@@ -207,12 +260,12 @@ export function parseLogDirectory(baseDir, fileCache = null) {
 
     for (const file of files) {
       const filePath = path.join(projectPath, file);
-      const records = parseLogFileCached(filePath, fileCache);
+      const records = parseFileSafely(filePath, fileCache);
       for (const record of records) {
         record.project = projectName;
         record.projectDirName = dir.name;
       }
-      allRecords.push(...records);
+      appendAll(allRecords, records);
 
       // Also parse subagent transcript files for this session
       const sessionDirName = file.replace(/\.jsonl$/, '');
@@ -227,13 +280,13 @@ export function parseLogDirectory(baseDir, fileCache = null) {
 
       for (const subFile of subagentFiles) {
         const subFilePath = path.join(subagentsPath, subFile);
-        const subRecords = parseLogFileCached(subFilePath, fileCache);
+        const subRecords = parseFileSafely(subFilePath, fileCache);
         for (const record of subRecords) {
           record.project = projectName;
           record.projectDirName = dir.name;
           record.sessionId = sessionDirName; // Group with parent session
         }
-        allRecords.push(...subRecords);
+        appendAll(allRecords, subRecords);
       }
     }
   }
@@ -254,8 +307,7 @@ export function parseMultiMachineDirectory(syncDir, fileCache = null) {
 
   for (const machineDir of machineDirs) {
     const machinePath = path.join(syncDir, machineDir.name);
-    const records = parseLogDirectory(machinePath, fileCache);
-    allRecords.push(...records);
+    appendAll(allRecords, parseLogDirectory(machinePath, fileCache));
   }
 
   return dedupByMessageId(allRecords);

@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { parseLogDirectory, parseLogFile, deriveProjectName, parseMultiMachineDirectory, dedupByMessageId } from '../server/parser.js';
+import { parseLogDirectory, parseLogFile, deriveProjectName, parseMultiMachineDirectory, dedupByMessageId, setChunkBytesForTesting } from '../server/parser.js';
 
 describe('deriveProjectName', () => {
   it('extracts last segment from encoded directory name', () => {
@@ -421,5 +421,91 @@ describe('parseLogDirectory - per-file parse cache', () => {
     expect(parseLogDirectory(tmpDir)[0].output_tokens).to.equal(50);
     fs.writeFileSync(filePath, line('msg_1', 99) + '\n');
     expect(parseLogDirectory(tmpDir)[0].output_tokens).to.equal(99);
+  });
+});
+
+describe('parseLogDirectory - large and unreadable logs (issue #2)', () => {
+  let tmpDir, projectDir;
+
+  const assistant = (id, out, text = '') => JSON.stringify({
+    type: 'assistant', sessionId: 's1', timestamp: '2026-07-01T00:00:00.000Z',
+    message: {
+      id, model: 'claude-sonnet-5', content: [{ type: 'text', text }],
+      usage: { input_tokens: 10, output_tokens: out, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    },
+  });
+  const user = text => JSON.stringify({ type: 'user', sessionId: 's1', message: { role: 'user', content: text } });
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'parser-large-test-'));
+    projectDir = path.join(tmpDir, '-Users-test-Workspace-large');
+    fs.mkdirSync(projectDir);
+  });
+
+  afterEach(() => {
+    setChunkBytesForTesting(8 * 1024 * 1024);
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('never reads a JSONL file into a single string', () => {
+    fs.writeFileSync(path.join(projectDir, 'sess.jsonl'), assistant('msg_1', 50) + '\n');
+    const original = fs.readFileSync;
+    // What V8 throws when a log past ~512MB is decoded in one piece.
+    fs.readFileSync = (file, ...rest) => {
+      if (String(file).endsWith('.jsonl')) throw new RangeError('Cannot create a string longer than 0x1fffffe8 characters');
+      return original(file, ...rest);
+    };
+    try {
+      expect(parseLogDirectory(tmpDir)).to.have.length(1);
+      expect(parseLogDirectory(tmpDir, new Map())).to.have.length(1);
+    } finally {
+      fs.readFileSync = original;
+    }
+  });
+
+  it('reassembles lines and multi-byte characters split across chunk boundaries', () => {
+    const lines = [
+      user('日本語のプロンプト 😀 '.repeat(40)),
+      assistant('msg_1', 11, '中文回答 — ünïcödé ✓'.repeat(30)),
+      user('x'.repeat(5000)),
+      assistant('msg_2', 22, '🚀'.repeat(100)),
+    ];
+    const filePath = path.join(projectDir, 'sess.jsonl');
+    fs.writeFileSync(filePath, lines.join('\n') + '\n' + assistant('msg_3', 33, 'tail ✓'));
+    const expected = parseLogFile(filePath);
+    expect(expected.map(r => r.output_tokens)).to.deep.equal([11, 22, 33]);
+
+    for (const size of [1, 2, 3, 7, 64, 1000]) {
+      setChunkBytesForTesting(size);
+      expect(parseLogFile(filePath), `chunk size ${size}`).to.deep.equal(expected);
+      expect(parseLogDirectory(tmpDir, new Map()).map(r => r.output_tokens).sort(), `cached, chunk size ${size}`)
+        .to.deep.equal([11, 22, 33]);
+    }
+  });
+
+  it('continues an incremental parse when an append lands mid-chunk', () => {
+    setChunkBytesForTesting(5);
+    const filePath = path.join(projectDir, 'sess.jsonl');
+    const cache = new Map();
+    fs.writeFileSync(filePath, assistant('msg_1', 10, 'é') + '\n' + assistant('msg_2', 20, 'ü').slice(0, 40));
+    expect(parseLogDirectory(tmpDir, cache).map(r => r.output_tokens)).to.deep.equal([10]);
+    fs.appendFileSync(filePath, assistant('msg_2', 20, 'ü').slice(40) + '\n' + assistant('msg_3', 30, '✓') + '\n');
+    expect(parseLogDirectory(tmpDir, cache).map(r => r.output_tokens).sort()).to.deep.equal([10, 20, 30]);
+  });
+
+  it('skips an unreadable file and keeps parsing the rest', () => {
+    fs.writeFileSync(path.join(projectDir, 'good.jsonl'), assistant('msg_1', 50) + '\n');
+    fs.mkdirSync(path.join(projectDir, 'broken.jsonl'));
+    const originalWarn = console.warn;
+    const warnings = [];
+    console.warn = msg => warnings.push(msg);
+    try {
+      expect(parseLogDirectory(tmpDir, new Map()).map(r => r.output_tokens)).to.deep.equal([50]);
+      expect(parseLogDirectory(tmpDir).map(r => r.output_tokens)).to.deep.equal([50]);
+    } finally {
+      console.warn = originalWarn;
+    }
+    expect(warnings).to.have.length(1);
+    expect(warnings[0]).to.include('broken.jsonl');
   });
 });
