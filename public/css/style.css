@@ -39,12 +39,69 @@
   --mix-in: #B8B0A3;
   --mix-out: #D97757;
 
+  --neutral: #C4BCAE;
+  --heat-0: #1F1E1B;
+  --heat-1: #3A3833;
+  --heat-2: #8A6350;
+  --heat-3: #D97757;
+  --rule: #2A2925;
+  --text-dim: #524D46;
+  --hover-tint: rgba(217, 119, 87, .06);
+  --tooltip-bg: #151412;
+
   --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --font-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
 
   --pad: 26px;
   color-scheme: dark;
+}
+
+/* Light "paper" variant of the same ledger (issue #9). Dark stays the default;
+   this applies only when the header toggle sets data-theme="light". The ramps
+   invert: what recedes on dark (cheap cache reads, old models) goes pale here,
+   and body text holds at least 4.5:1 against the panel. */
+:root[data-theme="light"] {
+  --page: #F1EFEA;
+  --panel: #FAF9F6;
+  --rail: #F4F2EE;
+  --edge: #E3DFD7;
+
+  --line: #E2DED6;
+  --line-soft: #ECE9E3;
+  --track: #E7E3DC;
+  --track-deep: #EFECE6;
+
+  --text: #1A1916;
+  --text-2: #45413B;
+  --text-3: #5F5A53;
+  --text-4: #7A756D;
+  --text-5: #A8A297;
+
+  --accent: #C15F3C;
+  --accent-dim: #A8694F;
+  --accent-ghost: #F4E4DA;
+
+  --ok: #5B7D55;
+  --warn: #A07E0E;
+  --danger: #B54A3C;
+
+  --mix-cr: #D6D0C5;
+  --mix-cw: #ABA497;
+  --mix-in: #7F786D;
+  --mix-out: #C15F3C;
+
+  --neutral: #8C8579;
+  --heat-0: #ECE9E3;
+  --heat-1: #D6D1C7;
+  --heat-2: #CC9C84;
+  --heat-3: #C15F3C;
+  --rule: #D9D4CB;
+  --text-dim: #6E6961;
+  --hover-tint: rgba(193, 95, 60, .07);
+  --tooltip-bg: #FFFFFF;
+
+  color-scheme: light;
 }
 
 body {
@@ -88,7 +145,7 @@ body {
 .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .claude-icon { width: 16px; height: 16px; flex-shrink: 0; }
 .brand-name { font-size: 14px; font-weight: 600; letter-spacing: -.005em; }
-.vrule { width: 1px; height: 14px; background: #2A2925; flex-shrink: 0; }
+.vrule { width: 1px; height: 14px; background: var(--rule); flex-shrink: 0; }
 
 .chip {
   font-family: var(--font-mono);
@@ -193,6 +250,10 @@ body {
   cursor: pointer;
 }
 .btn-refresh:hover { color: var(--accent); border-color: var(--accent-ghost); }
+.btn-theme svg {
+  display: block; width: 13px; height: 13px;
+  fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round;
+}
 
 .clock {
   display: flex; align-items: center; gap: 7px;
@@ -326,7 +387,7 @@ section { scroll-margin-top: 108px; }
 
 .trend-plot { position: relative; height: 196px; padding-left: 44px; }
 .trend-grid { position: absolute; left: 44px; right: 0; height: 1px; background: var(--line-soft); }
-.trend-grid.is-base { background: #2A2925; }
+.trend-grid.is-base { background: var(--rule); }
 .trend-grid-label {
   position: absolute; left: 0; width: 36px; text-align: right;
   font-family: var(--font-mono); font-size: 9px; color: var(--text-4);
@@ -343,7 +404,7 @@ section { scroll-margin-top: 108px; }
   flex: 1; min-width: 0; max-width: 52px; height: 100%;
   display: flex; flex-direction: column; justify-content: flex-end;
 }
-.trend-bar:hover { background: rgba(217, 119, 87, .06); }
+.trend-bar:hover { background: var(--hover-tint); }
 .trend-ticks {
   display: flex; justify-content: space-between;
   padding-left: 44px; margin-top: 9px;
@@ -363,7 +424,7 @@ section { scroll-margin-top: 108px; }
 .trend-total b { font-weight: 400; color: var(--accent); font-family: var(--font-mono); margin-left: 10px; }
 .trend-stat { font-size: 11px; color: var(--text-3); white-space: nowrap; }
 .trend-stat b { font-family: var(--font-mono); color: var(--text-2); font-weight: 400; }
-.trend-sep { width: 1px; height: 12px; background: #2A2925; }
+.trend-sep { width: 1px; height: 12px; background: var(--rule); }
 
 .trend-hours { display: flex; align-items: flex-end; gap: 22px; margin-top: 20px; }
 .trend-hours-head { flex-shrink: 0; }
@@ -437,7 +498,7 @@ section { scroll-margin-top: 108px; }
 }
 .proj-breakdown {
   width: 250px; flex-shrink: 0; text-align: right;
-  font-family: var(--font-mono); font-size: 10px; color: #524D46; white-space: nowrap;
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); white-space: nowrap;
 }
 .proj-cost {
   width: 70px; flex-shrink: 0; text-align: right;
@@ -608,7 +669,7 @@ section { scroll-margin-top: 108px; }
 .d3-tooltip {
   position: absolute;
   padding: 8px 12px;
-  background: #151412;
+  background: var(--tooltip-bg);
   border: 1px solid var(--line);
   border-radius: 6px;
   font-family: var(--font-mono);

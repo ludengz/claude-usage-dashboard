@@ -1,6 +1,7 @@
 import { fetchUsage, fetchModels, fetchProjects, fetchSessions, fetchCost, fetchCache, fetchStatus, fetchQuota, fetchSubscription, fetchQuotaCycles } from './api.js';
 import { initDatePicker } from './components/date-picker.js';
 import { initPlanSelector } from './components/plan-selector.js';
+import { initThemeToggle } from './components/theme-toggle.js';
 import { renderTokenTrend } from './charts/token-trend.js';
 import { renderCostComparison } from './charts/cost-comparison.js';
 import { renderModelDistribution } from './charts/model-distribution.js';
@@ -156,6 +157,16 @@ async function loadQuota() {
     });
     return data;
   } catch { return null; /* silently degrade */ }
+}
+
+// Charts bake resolved colours into SVG attributes and inline styles, so a
+// theme switch must redraw them. Quota panels repaint from their last payload
+// instead of refetching: the upstream quota endpoint is rate-limited.
+function repaintForTheme() {
+  loadAll();
+  if (_lastQuota) renderQuotaGauges(document.getElementById('chart-quota'), _lastQuota);
+  renderValueBlock();
+  loadQuotaCyclesData();
 }
 
 function loadQuotaCyclesData() {
@@ -367,6 +378,7 @@ function initAnchors() {
 
 function init() {
   initAnchors();
+  initThemeToggle(document.getElementById('btn-theme'), repaintForTheme);
 
   datePicker = initDatePicker(document.getElementById('date-picker'), (range) => {
     state.dateRange = range;

@@ -1,46 +1,112 @@
-// "Ledger" design tokens — the single source of truth for chart colours.
-// Mirrors the custom properties in css/style.css; charts draw into SVG/inline
-// styles where CSS variables are awkward, so the palette lives here too.
+// "Ledger" design tokens for charts. The custom properties in css/style.css are
+// the single source of truth, for both the default dark theme and the light
+// one: charts draw into SVG attributes and inline styles, where var() is
+// unreliable, so they read the resolved values here at render time.
+//
+// DARK_FALLBACK only applies where there is no stylesheet to read (Node tests);
+// test/theme.test.js keeps it identical to the dark :root block.
 
-export const C = {
-  text: '#F2F0EA',
-  text2: '#A5A099',
-  text3: '#6D6862',
-  text4: '#4A4740',
-  text5: '#3A3833',
+export const TOKEN_VARS = {
+  text: '--text',
+  text2: '--text-2',
+  text3: '--text-3',
+  text4: '--text-4',
+  text5: '--text-5',
 
-  line: '#232219',
-  lineSoft: '#1F1E1B',
-  track: '#201F1B',
-  trackDeep: '#1B1A17',
+  line: '--line',
+  lineSoft: '--line-soft',
+  track: '--track',
+  trackDeep: '--track-deep',
 
-  accent: '#D97757',
-  accentDim: '#B0765C',
-  accentGhost: '#3A2F26',
+  accent: '--accent',
+  accentDim: '--accent-dim',
+  accentGhost: '--accent-ghost',
 
-  ok: '#7C9A76',
-  warn: '#C9A227',
-  danger: '#C25B4E',
-  neutral: '#C4BCAE',
+  ok: '--ok',
+  warn: '--warn',
+  danger: '--danger',
+  neutral: '--neutral',
 };
 
-// Token mix, darkest (cheapest) to brightest (most expensive). The ramp itself
-// encodes price: cache reads are ~10x cheaper than output, so they recede.
-export const MIX = {
-  cacheRead: '#57534A',
-  cacheWrite: '#8A8378',
-  input: '#B8B0A3',
-  output: '#D97757',
+// Token mix, cheapest to most expensive. The ramp itself encodes price: cache
+// reads are ~10x cheaper than output, so they recede into the background.
+export const MIX_VARS = {
+  cacheRead: '--mix-cr',
+  cacheWrite: '--mix-cw',
+  input: '--mix-in',
+  output: '--mix-out',
 };
+
+const HEAT_VARS = ['--heat-0', '--heat-1', '--heat-2', '--heat-3'];
+
+export const DARK_FALLBACK = {
+  '--text': '#F2F0EA',
+  '--text-2': '#A5A099',
+  '--text-3': '#6D6862',
+  '--text-4': '#4A4740',
+  '--text-5': '#3A3833',
+  '--line': '#232219',
+  '--line-soft': '#1F1E1B',
+  '--track': '#201F1B',
+  '--track-deep': '#1B1A17',
+  '--accent': '#D97757',
+  '--accent-dim': '#B0765C',
+  '--accent-ghost': '#3A2F26',
+  '--ok': '#7C9A76',
+  '--warn': '#C9A227',
+  '--danger': '#C25B4E',
+  '--neutral': '#C4BCAE',
+  '--mix-cr': '#57534A',
+  '--mix-cw': '#8A8378',
+  '--mix-in': '#B8B0A3',
+  '--mix-out': '#D97757',
+  '--heat-0': '#1F1E1B',
+  '--heat-1': '#3A3833',
+  '--heat-2': '#8A6350',
+  '--heat-3': '#D97757',
+};
+
+// getComputedStyle is too slow to call per bar, so resolve every token once
+// and keep the result until the theme changes.
+let resolved = null;
+
+function resolveTokens() {
+  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') return DARK_FALLBACK;
+  const style = getComputedStyle(document.documentElement);
+  const out = {};
+  for (const [name, fallback] of Object.entries(DARK_FALLBACK)) {
+    out[name] = style.getPropertyValue(name).trim() || fallback;
+  }
+  return out;
+}
+
+function token(name) {
+  if (!resolved) resolved = resolveTokens();
+  return resolved[name];
+}
+
+/** Drop the resolved palette; call after switching data-theme. */
+export function invalidateThemeTokens() {
+  resolved = null;
+}
+
+function tokenGetters(vars) {
+  const obj = {};
+  for (const [key, name] of Object.entries(vars)) {
+    Object.defineProperty(obj, key, { enumerable: true, get: () => token(name) });
+  }
+  return Object.freeze(obj);
+}
+
+export const C = tokenGetters(TOKEN_VARS);
+export const MIX = tokenGetters(MIX_VARS);
 
 export const MIX_LEGEND = [
-  { key: 'cacheRead', label: 'cache read', color: MIX.cacheRead },
-  { key: 'cacheWrite', label: 'cache write', color: MIX.cacheWrite },
-  { key: 'input', label: 'input', color: MIX.input },
-  { key: 'output', label: 'output', color: MIX.output },
-];
-
-export const HEAT = ['#1F1E1B', '#3A3833', '#8A6350', '#D97757'];
+  { key: 'cacheRead', label: 'cache read' },
+  { key: 'cacheWrite', label: 'cache write' },
+  { key: 'input', label: 'input' },
+  { key: 'output', label: 'output' },
+].map(entry => Object.freeze({ ...entry, get color() { return MIX[entry.key]; } }));
 
 // Healthy meters stay neutral; colour appears only as a warning. Keeping green
 // off the happy path is what makes the single accent readable.
@@ -52,10 +118,10 @@ export function meterColor(pct) {
 }
 
 export function heatColor(ratio) {
-  if (ratio === 0) return HEAT[0];
-  if (ratio < 0.33) return HEAT[1];
-  if (ratio < 0.66) return HEAT[2];
-  return HEAT[3];
+  if (ratio === 0) return token(HEAT_VARS[0]);
+  if (ratio < 0.33) return token(HEAT_VARS[1]);
+  if (ratio < 0.66) return token(HEAT_VARS[2]);
+  return token(HEAT_VARS[3]);
 }
 
 export function fmtTokens(n) {

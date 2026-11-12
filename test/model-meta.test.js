@@ -5,9 +5,12 @@ import {
   modelColor,
   modelDisplayName,
   MODEL_COLORS,
+  MODEL_COLORS_LIGHT,
   MODEL_DISPLAY,
   UNKNOWN_MODEL_COLOR,
+  UNKNOWN_MODEL_COLOR_LIGHT,
 } from '../public/js/model-meta.js';
+import { cssBlock, contrast } from './helpers/theme-css.js';
 
 describe('normalizeModelId', () => {
   it('strips a release-date suffix', () => {
@@ -98,5 +101,36 @@ describe('model metadata stays in sync with pricing', () => {
     const unpriced = Object.keys(MODEL_COLORS).filter(id => !MODEL_PRICING[id]);
     expect(unpriced, `models rendered but missing from MODEL_PRICING: ${unpriced.join(', ')}`)
       .to.deep.equal([]);
+  });
+
+  it('gives every priced model a light-theme colour, and nothing else', () => {
+    expect(Object.keys(MODEL_COLORS_LIGHT)).to.have.members(Object.keys(MODEL_PRICING));
+  });
+});
+
+describe('light-theme model colours', () => {
+  const panel = cssBlock(':root[data-theme="light"]')['--panel'];
+
+  it('are distinct from each other and from the unknown fallback', () => {
+    const colours = Object.values(MODEL_COLORS_LIGHT);
+    expect(new Set(colours).size).to.equal(colours.length);
+    expect(colours).to.not.include(UNKNOWN_MODEL_COLOR_LIGHT);
+  });
+
+  it('stay legible as chart marks (3:1) on the light panel', () => {
+    for (const [id, colour] of Object.entries(MODEL_COLORS_LIGHT)) {
+      expect(contrast(colour, panel), id).to.be.at.least(3);
+    }
+  });
+
+  it('are what modelColor returns when asked for the light theme', () => {
+    expect(modelColor('claude-sonnet-5-5', true)).to.equal(MODEL_COLORS_LIGHT['claude-sonnet-5-5']);
+    expect(modelColor('claude-haiku-4-5-20251001', true)).to.equal(MODEL_COLORS_LIGHT['claude-haiku-4-5']);
+    expect(modelColor('kling-video-v3_0', true)).to.equal(UNKNOWN_MODEL_COLOR_LIGHT);
+  });
+
+  it('leave the dark default untouched', () => {
+    expect(modelColor('claude-sonnet-5-5')).to.equal(MODEL_COLORS['claude-sonnet-5-5']);
+    expect(modelColor('claude-sonnet-5-5', false)).to.equal(MODEL_COLORS['claude-sonnet-5-5']);
   });
 });

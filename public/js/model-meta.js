@@ -30,6 +30,27 @@ export const MODEL_COLORS = {
   'claude-haiku-4-5': '#C9A227',
 };
 
+// The same families on the light theme's paper panel. Pale greys and amber
+// vanish on white, so each ramp inverts: the newest model takes the strongest
+// tone, and every colour keeps at least 3:1 contrast with the panel
+// (test/model-meta.test.js checks both).
+export const MODEL_COLORS_LIGHT = {
+  'claude-fable-5-2': '#B3302A',
+  'claude-fable-5-1': '#C9574A',
+  'claude-fable-5': '#D06E5E',
+  'claude-opus-5-5': '#A34A2E',
+  'claude-opus-5': '#BF5F3E',
+  'claude-opus-4-8': '#C9774F',
+  'claude-opus-4-7': '#A87560',
+  'claude-opus-4-6': '#8A6350',
+  'claude-sonnet-5-5': '#4F4B45',
+  'claude-sonnet-5': '#6B665E',
+  'claude-sonnet-4-6': '#837D72',
+  'claude-sonnet-4-5': '#938D81',
+  'claude-haiku-5-5': '#9C7A12',
+  'claude-haiku-4-5': '#AC8717',
+};
+
 export const MODEL_DISPLAY = {
   'claude-fable-5-2': 'fable 5.2',
   'claude-fable-5-1': 'fable 5.1',
@@ -48,9 +69,16 @@ export const MODEL_DISPLAY = {
 };
 
 export const UNKNOWN_MODEL_COLOR = '#57534A';
+export const UNKNOWN_MODEL_COLOR_LIGHT = '#B5B0A6';
 
-export function modelColor(modelId) {
-  return MODEL_COLORS[normalizeModelId(modelId)] || UNKNOWN_MODEL_COLOR;
+// The header toggle sets data-theme on <html>; dark is the default.
+function isLightTheme() {
+  return typeof document !== 'undefined' && document.documentElement?.dataset?.theme === 'light';
+}
+
+export function modelColor(modelId, light = isLightTheme()) {
+  const palette = light ? MODEL_COLORS_LIGHT : MODEL_COLORS;
+  return palette[normalizeModelId(modelId)] || (light ? UNKNOWN_MODEL_COLOR_LIGHT : UNKNOWN_MODEL_COLOR);
 }
 
 // Unknown models still get a readable label: drop the vendor prefix and turn the
